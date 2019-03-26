@@ -20,6 +20,7 @@ import { MessageHandlerService } from '../../shared/message-handler/message-hand
 import { ConfirmMessageHandler } from '../config.msg.utils';
 import { AppConfigService } from '../../app-config.service';
 import { ConfigurationService } from '../config.service';
+import { catchError } from 'rxjs/operators';
 const fakePass = 'aWpLOSYkIzJTTU4wMDkx';
 
 @Component({
@@ -65,12 +66,15 @@ export class ConfigurationAuthComponent implements OnChanges {
     public get showUAA(): boolean {
         return this.currentConfig && this.currentConfig.auth_mode && this.currentConfig.auth_mode.value === 'uaa_auth';
     }
-
+    public get showHttpAuth(): boolean {
+        return this.currentConfig && this.currentConfig.auth_mode && this.currentConfig.auth_mode.value === 'http_auth';
+    }
     public get showSelfReg(): boolean {
         if (!this.currentConfig || !this.currentConfig.auth_mode) {
             return true;
         } else {
-            return this.currentConfig.auth_mode.value !== 'ldap_auth' && this.currentConfig.auth_mode.value !== 'uaa_auth';
+            return this.currentConfig.auth_mode.value !== 'ldap_auth' && this.currentConfig.auth_mode.value !== 'uaa_auth'
+            && this.currentConfig.auth_mode.value !== 'http_auth' ;
         }
     }
 
@@ -111,11 +115,10 @@ export class ConfigurationAuthComponent implements OnChanges {
 
         this.testingLDAPOnGoing = true;
         this.configService.testLDAPServer(ldapSettings)
-            .then(respone => {
+            .subscribe(respone => {
                 this.testingLDAPOnGoing = false;
                 this.msgHandler.showSuccess('CONFIG.TEST_LDAP_SUCCESS');
-            })
-            .catch(error => {
+            }, error => {
                 this.testingLDAPOnGoing = false;
                 let err = error._body;
                 if (!err || !err.trim()) {
@@ -143,7 +146,11 @@ export class ConfigurationAuthComponent implements OnChanges {
             || prop.startsWith('uaa_')
             || prop === 'auth_mode'
             || prop === 'project_creattion_restriction'
-            || prop === 'self_registration') {
+            || prop === 'self_registration'
+            || prop === 'http_authproxy_endpoint'
+            || prop === 'http_authproxy_skip_cert_verify'
+            || prop === 'http_authproxy_always_onboard'
+            ) {
                 changes[prop] = allChanges[prop];
             }
         }
@@ -161,7 +168,7 @@ export class ConfigurationAuthComponent implements OnChanges {
     handleOnChange($event: any): void {
         if ($event && $event.target && $event.target["value"]) {
             let authMode = $event.target["value"];
-            if (authMode === 'ldap_auth' || authMode === 'uaa_auth') {
+            if (authMode === 'ldap_auth' || authMode === 'uaa_auth' || authMode === 'http_auth') {
                 if (this.currentConfig.self_registration.value) {
                     this.currentConfig.self_registration.value = false; // unselect
                 }
@@ -180,14 +187,14 @@ export class ConfigurationAuthComponent implements OnChanges {
         if (!isEmpty(changes)) {
             this.onGoing = true;
             this.configService.saveConfiguration(changes)
-                .then(response => {
+                .subscribe(response => {
                     this.onGoing = false;
                     this.retrieveConfig();
                     // Reload bootstrap option
-                    this.appConfigService.load().catch(error => console.error('Failed to reload bootstrap option with error: ', error));
+                    this.appConfigService.load().subscribe(() => {}
+                    , error => console.error('Failed to reload bootstrap option with error: ', error));
                     this.msgHandler.showSuccess('CONFIG.SAVE_SUCCESS');
-                })
-                .catch(error => {
+                }, error => {
                     this.onGoing = false;
                     this.msgHandler.handleError(error);
                 });
@@ -200,7 +207,7 @@ export class ConfigurationAuthComponent implements OnChanges {
     retrieveConfig(): void {
         this.onGoing = true;
         this.configService.getConfiguration()
-            .then((configurations: Configuration) => {
+            .subscribe((configurations: Configuration) => {
                 this.onGoing = false;
 
                 // Add two password fields
@@ -209,8 +216,7 @@ export class ConfigurationAuthComponent implements OnChanges {
                 this.currentConfig = configurations;
                 // Keep the original copy of the data
                 this.originalConfig = clone(configurations);
-            })
-            .catch(error => {
+            }, error => {
                 this.onGoing = false;
                 this.msgHandler.handleError(error);
             });

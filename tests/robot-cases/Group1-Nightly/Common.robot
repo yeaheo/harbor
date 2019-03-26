@@ -426,7 +426,8 @@ Test Case - Delete Multi Project
     Navigate To Projects
     Filter Object  project
     Retry Wait Element Not Visible  //clr-datagrid/div/div[2]
-    Multi-delete Object  projecta  projectb
+    @{project_list}  Create List  projecta  projectb
+    Multi-delete Object  ${project_delete_btn}  @{project_list}
     # Verify delete project with image should not be deleted directly
     Delete Fail  projecta${d}
     Delete Success  projectb${d}
@@ -442,7 +443,8 @@ Test Case - Delete Multi Repo
     Push Image  ${ip}  user013  Test1@34  project${d}  busybox
     Sleep  2
     Go Into Project  project${d}
-    Multi-delete Object  hello-world  busybox
+    @{repo_list}  Create List  hello-world  busybox
+    Multi-delete Object  ${repo_delete_btn}  @{repo_list}
     # Verify
     Delete Success  hello-world  busybox
     Close Browser
@@ -457,7 +459,8 @@ Test Case - Delete Multi Tag
     Push Image With Tag  ${ip}  user014  Test1@34  project${d}  redis  4.0.7-alpine  4.0.7-alpine
     Go Into Project  project${d}
     Go Into Repo  redis
-    Multi-delete object  3.2.10-alpine  4.0.7-alpine
+    @{tag_list}  Create List  3.2.10-alpine  4.0.7-alpine
+    Multi-delete object  ${tag_delete_btn}  @{tag_list}
     # Verify
     Delete Success  3.2.10-alpine  4.0.7-alpine
     Close Browser
@@ -600,7 +603,7 @@ Test Case - View Scan Error
     ${d}=  get current date  result_format=%m%s
 
     Sign In Harbor  ${HARBOR_URL}  user026  Test1@34
-    Create An New Project  project${d}   
+    Create An New Project  project${d}
     Push Image  ${ip}  user026  Test1@34  project${d}  vmware/photon:1.0
     Go Into Project  project${d}
     Go Into Repo  project${d}/vmware/photon
@@ -615,27 +618,22 @@ Test Case - List Helm Charts
     Sign In Harbor  ${HARBOR_URL}  user027  Test1@34
     Create An New Project  project${d}
     Go Into Project  project${d}  has_image=${false}
-    Sleep  2
-    
+
     Switch To Project Charts
     Upload Chart files
     Go Into Chart Version  ${prometheus_chart_name}
-    Wait Until Page Contains  ${prometheus_chart_version}
+    Retry Wait Until Page Contains  ${prometheus_chart_version}
     Go Into Chart Detail  ${prometheus_chart_version}
 
     # Summary tab
-    Page Should Contain Element  ${summary_markdown}
-    Page Should Contain Element  ${summary_container}
+    Retry Wait Until Page Contains Element  ${summary_markdown}
+    Retry Wait Until Page Contains Element  ${summary_container}
 
     # Dependency tab
-    Click Element  xpath=${detail_dependency}
-    Sleep  1
-    Page Should Contain Element  ${dependency_content}
+    Retry Double Keywords When Error  Retry Element Click  xpath=${detail_dependency}  Retry Wait Until Page Contains Element  ${dependency_content}
 
     # Values tab
-    Click Element  xpath=${detail_value}
-    Sleep  1
-    Page Should Contain Element  ${value_content}
+    Retry Double Keywords When Error  Retry Element Click  xpath=${detail_value}  Retry Wait Until Page Contains Element  ${value_content}
 
     Go Back To Versions And Delete
     Close Browser
@@ -664,7 +662,7 @@ Test Case - Retag A Image Tag
     Sign In Harbor  ${HARBOR_URL}  user028  Test1@34
     Create An New Project  project${random_num1}
     Create An New Project  project${random_num2}
-    
+
     Go Into Project  project${random_num1}  has_image=${false}
     Sleep  1
     Push Image With Tag  ${ip}  user028  Test1@34  project${random_num1}  redis  ${image_tag}

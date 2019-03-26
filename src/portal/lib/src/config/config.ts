@@ -69,6 +69,7 @@ export class Configuration {
     ldap_group_search_filter: StringValueItem;
     ldap_group_attribute_name: StringValueItem;
     ldap_group_search_scope: NumberValueItem;
+    ldap_group_membership_attribute: StringValueItem;
     uaa_client_id: StringValueItem;
     uaa_client_secret?: StringValueItem;
     uaa_endpoint: StringValueItem;
@@ -87,6 +88,9 @@ export class Configuration {
     cfg_expiration: NumberValueItem;
     scan_all_policy: ComplexValueItem;
     read_only: BoolValueItem;
+    http_authproxy_endpoint?: StringValueItem;
+    http_authproxy_skip_cert_verify?: BoolValueItem;
+    http_authproxy_always_onboard?: BoolValueItem;
 
     public constructor() {
         this.auth_mode = new StringValueItem("db_auth", true);
@@ -105,6 +109,7 @@ export class Configuration {
         this.ldap_group_search_filter = new StringValueItem("", true);
         this.ldap_group_attribute_name = new StringValueItem("", true);
         this.ldap_group_search_scope = new NumberValueItem(0, true);
+        this.ldap_group_membership_attribute = new StringValueItem("", true);
         this.uaa_client_id = new StringValueItem("", true);
         this.uaa_client_secret = new StringValueItem("", true);
         this.uaa_endpoint = new StringValueItem("", true);
@@ -128,5 +133,8 @@ export class Configuration {
             }
         }, true);
         this.read_only = new BoolValueItem(false, true);
+        this.http_authproxy_endpoint = new StringValueItem("", true);
+        this.http_authproxy_skip_cert_verify = new BoolValueItem(false, true);
+        this.http_authproxy_always_onboard = new BoolValueItem(false, true);
     }
 }

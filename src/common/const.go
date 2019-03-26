@@ -20,6 +20,7 @@ const (
 	LDAPAuth            = "ldap_auth"
 	UAAAuth             = "uaa_auth"
 	HTTPAuth            = "http_auth"
+	OIDCAuth            = "oidc_auth"
 	ProCrtRestrEveryone = "everyone"
 	ProCrtRestrAdmOnly  = "adminonly"
 	LDAPScopeBase       = 0
@@ -98,6 +99,12 @@ const (
 	HTTPAuthProxyEndpoint       = "http_authproxy_endpoint"
 	HTTPAuthProxySkipCertVerify = "http_authproxy_skip_cert_verify"
 	HTTPAuthProxyAlwaysOnboard  = "http_authproxy_always_onboard"
+	OIDCName                    = "oidc_name"
+	OIDCEndpoint                = "oidc_endpoint"
+	OIDCCLientID                = "oidc_client_id"
+	OIDCClientSecret            = "oidc_client_secret"
+	OIDCSkipCertVerify          = "oidc_skip_cert_verify"
+	OIDCScope                   = "oidc_scope"
 
 	DefaultClairEndpoint              = "http://clair:6060"
 	CfgDriverDB                       = "db"
@@ -112,6 +119,7 @@ const (
 	DefaultNotaryEndpoint             = "http://notary-server:4443"
 	LdapGroupType                     = 1
 	LdapGroupAdminDn                  = "ldap_group_admin_dn"
+	LDAPGroupMembershipAttribute      = "ldap_group_membership_attribute"
 	DefaultRegistryControllerEndpoint = "http://registryctl:8080"
 	WithChartMuseum                   = "with_chartmuseum"
 	ChartRepoURL                      = "chart_repository_url"
@@ -123,4 +131,6 @@ const (
 	RobotPrefix        = "robot$"
 	CoreConfigPath     = "/api/internal/configurations"
 	RobotTokenDuration = "robot_token_duration"
+
+	OIDCCallbackPath = "/c/oidc_callback"
 )

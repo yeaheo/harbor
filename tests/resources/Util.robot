@@ -96,6 +96,16 @@ Retry Text Input
     @{param}  Create List  ${element_xpath}  ${text}
     Retry Action Keyword  Text Input  @{param}
 
+Retry Checkbox Should Be Selected
+    [Arguments]  ${element_xpath}
+    @{param}  Create List  ${element_xpath}
+    Retry Action Keyword  Checkbox Should Be Selected  @{param}
+
+Retry Checkbox Should Not Be Selected
+    [Arguments]  ${element_xpath}
+    @{param}  Create List  ${element_xpath}
+    Retry Action Keyword  Checkbox Should Not Be Selected  @{param}
+
 Retry Wait Until Page Contains
     [Arguments]  ${element_xpath}
     @{param}  Create List  ${element_xpath}
@@ -105,6 +115,11 @@ Retry Wait Until Page Contains Element
     [Arguments]  ${element_xpath}
     @{param}  Create List  ${element_xpath}
     Retry Action Keyword  Wait Until Page Contains Element  @{param}
+
+Retry Wait Until Page Not Contains Element
+    [Arguments]  ${element_xpath}
+    @{param}  Create List  ${element_xpath}
+    Retry Action Keyword  Wait Until Page Does Not Contain Element  @{param}
 
 Element Click
     [Arguments]  ${element_xpath}
@@ -156,3 +171,17 @@ Retry Keyword When Error
     \    Sleep  2
     Run Keyword If  '${out[0]}'=='FAIL'  Capture Page Screenshot
     Should Be Equal As Strings  '${out[0]}'  'PASS'
+
+Retry Double Keywords When Error
+    [Arguments]  ${keyword1}  ${element1}  ${keyword2}  ${element2}
+    :For  ${n}  IN RANGE  1  6
+    \    Log To Console  Trying Delete Repo ${n} times ...
+    \    ${out1}  Run Keyword And Ignore Error  ${keyword1}  ${element1}
+    \    Capture Page Screenshot
+    \    ${out2}  Run Keyword And Ignore Error  ${keyword2}  ${element2}
+    \    Capture Page Screenshot
+    \    Log To Console  Return value is ${out1[0]} ${out2[0]}
+    \    Exit For Loop If  '${out1[0]}'=='PASS' and '${out2[0]}'=='PASS'
+    \    Sleep  2
+    Should Be Equal As Strings  '${out1[0]}'  'PASS'
+    Should Be Equal As Strings  '${out2[0]}'  'PASS'
