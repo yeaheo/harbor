@@ -24,9 +24,10 @@ import { Router } from "@angular/router";
 
 import { Comparator, State } from "../../../../lib/src/service/interface";
 import {TranslateService} from "@ngx-translate/core";
-
 import { RoleInfo, ConfirmationTargets, ConfirmationState, ConfirmationButtons } from "../../shared/shared.const";
-import { CustomComparator, doFiltering, doSorting, calculatePage } from "../../shared/shared.utils";
+
+import { errorHandler as errorHandFn, calculatePage , operateChanges, OperateInfo, OperationService
+    , OperationState, CustomComparator, doFiltering, doSorting, ProjectService } from "@harbor/ui";
 
 import { SessionService } from "../../shared/session.service";
 import { StatisticHandler } from "../../shared/statictics/statistic-handler.service";
@@ -34,13 +35,12 @@ import { ConfirmationDialogService } from "../../shared/confirmation-dialog/conf
 import { MessageHandlerService } from "../../shared/message-handler/message-handler.service";
 import { ConfirmationMessage } from "../../shared/confirmation-dialog/confirmation-message";
 import { SearchTriggerService } from "../../base/global-search/search-trigger.service";
-import {AppConfigService} from "../../app-config.service";
-import {operateChanges, OperateInfo, OperationService, OperationState} from "@harbor/ui";
+import { AppConfigService } from "../../app-config.service";
 
 import { Project } from "../project";
-import { ProjectService } from "../project.service";
 import { map, catchError } from "rxjs/operators";
 import { throwError as observableThrowError } from "rxjs";
+
 @Component({
     selector: "list-project",
     templateUrl: "list-project.component.html",
@@ -78,6 +78,7 @@ export class ListProjectComponent implements OnDestroy {
         private translate: TranslateService,
         private deletionDialogService: ConfirmationDialogService,
         private operationService: OperationService,
+        private translateService: TranslateService,
         private ref: ChangeDetectorRef) {
         this.subscription = deletionDialogService.confirmationConfirm$.subscribe(message => {
             if (message &&
@@ -142,7 +143,7 @@ export class ListProjectComponent implements OnDestroy {
     goToLink(proId: number): void {
         this.searchTrigger.closeSearch(true);
 
-        let linkUrl = ["harbor", "projects", proId, "repositories"];
+        let linkUrl = ["harbor", "projects", proId, "summary"];
         this.router.navigate(linkUrl);
     }
 
@@ -176,7 +177,7 @@ export class ListProjectComponent implements OnDestroy {
                     }
                 }
 
-                this.projects = response.json() as Project[];
+                this.projects = response.body as Project[];
                 // Do customising filtering and sorting
                 this.projects = doFiltering<Project>(this.projects, state);
                 this.projects = doSorting<Project>(this.projects, state);
@@ -274,16 +275,11 @@ export class ListProjectComponent implements OnDestroy {
                     });
                 }), catchError(
                 error => {
-                    if (error && error.status === 412) {
-                        return observableForkJoin(this.translate.get("BATCH.DELETED_FAILURE"),
-                            this.translate.get("PROJECT.FAILED_TO_DELETE_PROJECT")).pipe(map(res => {
-                            operateChanges(operMessage, OperationState.failure, res[1]);
-                        }));
-                    } else {
-                        return this.translate.get("BATCH.DELETED_FAILURE").pipe(map(res => {
-                            operateChanges(operMessage, OperationState.failure, res);
-                        }));
-                    }
+                    const message = errorHandFn(error);
+                    this.translateService.get(message).subscribe(res =>
+                        operateChanges(operMessage, OperationState.failure, res)
+                    );
+                    return observableThrowError(message);
                 }));
     }
 

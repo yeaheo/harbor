@@ -1,6 +1,6 @@
 
 import { Injectable, Inject } from '@angular/core';
-import { Http } from '@angular/http';
+import { HttpClient } from '@angular/common/http';
 import { throwError as observableThrowError, Observable } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { SERVICE_CONFIG, IServiceConfig } from "../../service.config";
@@ -17,12 +17,14 @@ export abstract class GcApiRepository {
     abstract getStatus(id): Observable<any>;
 
     abstract getJobs(): Observable<any>;
+
+    abstract getLogLink(id): string;
 }
 
 @Injectable()
 export class GcApiDefaultRepository extends GcApiRepository {
     constructor(
-        private http: Http,
+        private http: HttpClient,
         @Inject(SERVICE_CONFIG) private config: IServiceConfig
     ) {
         super();
@@ -40,8 +42,7 @@ export class GcApiDefaultRepository extends GcApiRepository {
 
     public getSchedule(): Observable<any> {
         return this.http.get(`${this.config.gcEndpoint}/schedule`)
-            .pipe(catchError(error => observableThrowError(error)))
-            .pipe(map(response => response.json()));
+            .pipe(catchError(error => observableThrowError(error)));
     }
 
     public getLog(id): Observable<any> {
@@ -51,14 +52,16 @@ export class GcApiDefaultRepository extends GcApiRepository {
 
     public getStatus(id): Observable<any> {
         return this.http.get(`${this.config.gcEndpoint}/id`)
-            .pipe(catchError(error => observableThrowError(error)))
-            .pipe(map(response => response.json()));
+            .pipe(catchError(error => observableThrowError(error)));
     }
 
     public getJobs(): Observable<any> {
         return this.http.get(`${this.config.gcEndpoint}`)
-            .pipe(catchError(error => observableThrowError(error)))
-            .pipe(map(response => response.json()));
+            .pipe(catchError(error => observableThrowError(error)));
+    }
+
+    public getLogLink(id) {
+        return `${this.config.gcEndpoint}/${id}/log`;
     }
 
 }

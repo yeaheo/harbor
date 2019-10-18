@@ -1,5 +1,5 @@
 # Makefile for a harbor project
-#	
+#
 # Targets:
 #
 # build: 	build harbor photon images
@@ -64,6 +64,10 @@ DOCKERFILEPATH_CLAIR=$(DOCKERFILEPATH)/clair
 DOCKERFILENAME_CLAIR=Dockerfile
 DOCKERIMAGENAME_CLAIR=goharbor/clair-photon
 
+DOCKERFILEPATH_CLAIR_ADAPTER=$(DOCKERFILEPATH)/clair-adapter
+DOCKERFILENAME_CLAIR_ADAPTER=Dockerfile
+DOCKERIMAGENAME_CLAIR_ADAPTER=goharbor/clair-adapter-photon
+
 DOCKERFILEPATH_NGINX=$(DOCKERFILEPATH)/nginx
 DOCKERFILENAME_NGINX=Dockerfile
 DOCKERIMAGENAME_NGINX=goharbor/nginx-photon
@@ -109,20 +113,20 @@ _build_db:
 
 _build_portal:
 	@echo "building portal container for photon..."
-	$(DOCKERBUILD) -f $(DOCKERFILEPATH_PORTAL)/$(DOCKERFILENAME_PORTAL) -t $(DOCKERIMAGENAME_PORTAL):$(VERSIONTAG) .
+	$(DOCKERBUILD) --build-arg npm_registry=$(NPM_REGISTRY) -f $(DOCKERFILEPATH_PORTAL)/$(DOCKERFILENAME_PORTAL) -t $(DOCKERIMAGENAME_PORTAL):$(VERSIONTAG) .
 	@echo "Done."
 
-_build_core:	
+_build_core:
 	@echo "building core container for photon..."
 	@$(DOCKERBUILD) -f $(DOCKERFILEPATH_CORE)/$(DOCKERFILENAME_CORE) -t $(DOCKERIMAGENAME_CORE):$(VERSIONTAG) .
 	@echo "Done."
-	
-_build_jobservice:		
+
+_build_jobservice:
 	@echo "building jobservice container for photon..."
 	@$(DOCKERBUILD) -f $(DOCKERFILEPATH_JOBSERVICE)/$(DOCKERFILENAME_JOBSERVICE) -t $(DOCKERIMAGENAME_JOBSERVICE):$(VERSIONTAG) .
 	@echo "Done."
 
-_build_log:	
+_build_log:
 	@echo "building log container for photon..."
 	$(DOCKERBUILD) -f $(DOCKERFILEPATH_LOG)/$(DOCKERFILENAME_LOG) -t $(DOCKERIMAGENAME_LOG):$(VERSIONTAG) .
 	@echo "Done."
@@ -141,6 +145,16 @@ _build_clair:
 		echo "Done." ; \
 	fi
 
+_build_clair_adapter:
+	# TODO: add support to fetch clair adapter binary from google storage ranther than build from source
+	@if [ "$(CLAIRFLAG)" = "true" ] ; then \
+		cd $(DOCKERFILEPATH_CLAIR_ADAPTER) && $(DOCKERFILEPATH_CLAIR_ADAPTER)/builder $(CLAIRADAPTERVERSION) && cd - ; \
+		echo "building clair adapter container for photon..." ; \
+		$(DOCKERBUILD) -f $(DOCKERFILEPATH_CLAIR_ADAPTER)/$(DOCKERFILENAME_CLAIR_ADAPTER) -t $(DOCKERIMAGENAME_CLAIR_ADAPTER):$(CLAIRADAPTERVERSION)-$(VERSIONTAG) . ; \
+		rm -rf $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary; \
+		echo "Done." ; \
+	fi
+
 _build_chart_server:
 	@if [ "$(CHARTFLAG)" = "true" ] ; then \
 		if [ "$(BUILDBIN)" != "true" ] ; then \
@@ -154,7 +168,7 @@ _build_chart_server:
 		rm -rf $(DOCKERFILEPATH_CHART_SERVER)/binary; \
 		echo "Done." ; \
 	fi
-		
+
 _build_nginx:
 	@echo "building nginx container for photon..."
 	@$(DOCKERBUILD) -f $(DOCKERFILEPATH_NGINX)/$(DOCKERFILENAME_NGINX) -t $(DOCKERIMAGENAME_NGINX):$(NGINXVERSION) .
@@ -175,7 +189,7 @@ _build_notary:
 		rm -rf $(DOCKERFILEPATH_NOTARY)/binary; \
 		echo "Done."; \
 	fi
-		
+
 _build_registry:
 	@if [ "$(BUILDBIN)" != "true" ] ; then \
 		rm -rf $(DOCKERFILEPATH_REG)/binary && mkdir -p $(DOCKERFILEPATH_REG)/binary && \
@@ -187,7 +201,7 @@ _build_registry:
 	@chmod 655 $(DOCKERFILEPATH_REG)/binary/registry && $(DOCKERBUILD) -f $(DOCKERFILEPATH_REG)/$(DOCKERFILENAME_REG) -t $(DOCKERIMAGENAME_REG):$(REGISTRYVERSION)-$(VERSIONTAG) .
 	@echo "Done."
 
-_build_registryctl:		
+_build_registryctl:
 	@echo "building registry controller for photon..."
 	@$(DOCKERBUILD) -f $(DOCKERFILEPATH_REGISTRYCTL)/$(DOCKERFILENAME_REGISTRYCTL) -t $(DOCKERIMAGENAME_REGISTRYCTL):$(VERSIONTAG) .
 	@rm -rf $(DOCKERFILEPATH_REG)/binary
@@ -209,7 +223,7 @@ define _get_binary
 	$(WGET) --timeout 30 --no-check-certificate $1 -O $2
 endef
 
-build: _build_prepare _build_db _build_portal _build_core _build_jobservice _build_log _build_nginx _build_registry _build_registryctl _build_notary _build_clair _build_redis _build_migrator _build_chart_server
+build: _build_prepare _build_db _build_portal _build_core _build_jobservice _build_log _build_nginx _build_registry _build_registryctl _build_notary _build_clair _build_clair_adapter _build_redis _build_migrator _build_chart_server
 
 cleanimage:
 	@echo "cleaning image for photon..."
@@ -217,7 +231,7 @@ cleanimage:
 	- $(DOCKERRMIMAGE) -f $(DOCKERIMAGENAME_CORE):$(VERSIONTAG)
 	- $(DOCKERRMIMAGE) -f $(DOCKERIMAGENAME_JOBSERVICE):$(VERSIONTAG)
 	- $(DOCKERRMIMAGE) -f $(DOCKERIMAGENAME_LOG):$(VERSIONTAG)
-	
+
 .PHONY: clean
 clean: cleanimage
 

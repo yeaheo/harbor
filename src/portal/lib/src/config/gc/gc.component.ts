@@ -18,7 +18,7 @@ import {
 import { ErrorHandler } from "../../error-handler/index";
 import { CronScheduleComponent } from "../../cron-schedule/cron-schedule.component";
 import { OriginCron } from '../../service/interface';
-
+import { finalize } from "rxjs/operators";
 @Component({
   selector: "gc-config",
   templateUrl: "./gc.component.html",
@@ -31,7 +31,8 @@ export class GcComponent implements OnInit {
   disableGC: boolean = false;
   getText = 'CONFIG.GC';
   getLabelCurrent = 'GC.CURRENT_SCHEDULE';
-  @ViewChild(CronScheduleComponent)
+  @Output() loadingGcStatus = new EventEmitter<boolean>();
+  @ViewChild(CronScheduleComponent, {static: false})
   CronScheduleComponent: CronScheduleComponent;
   constructor(
     private gcRepoService: GcRepoService,
@@ -48,8 +49,15 @@ export class GcComponent implements OnInit {
   }
 
   getCurrentSchedule() {
-    this.gcRepoService.getSchedule().subscribe(schedule => {
+    this.loadingGcStatus.emit(true);
+    this.gcRepoService.getSchedule()
+    .pipe(finalize(() => {
+      this.loadingGcStatus.emit(false);
+    }))
+    .subscribe(schedule => {
       this.initSchedule(schedule);
+    }, error => {
+      this.errorHandler.error(error);
     });
   }
 
@@ -82,10 +90,6 @@ export class GcComponent implements OnInit {
         this.translate.get("GC.MSG_SUCCESS").subscribe((res: string) => {
           this.errorHandler.info(res);
         });
-        this.getJobs();
-        setTimeout(() => {
-          this.getJobs();
-        }, THREE_SECONDS); // to avoid some jobs not finished.
       },
       error => {
         this.errorHandler.error(error);
@@ -116,6 +120,7 @@ export class GcComponent implements OnInit {
             .get("GC.MSG_SCHEDULE_RESET")
             .subscribe((res) => {
               this.errorHandler.info(res);
+              this.CronScheduleComponent.resetSchedule();
             });
           this.resetSchedule(cron);
         },
@@ -128,6 +133,7 @@ export class GcComponent implements OnInit {
         response => {
           this.translate.get("GC.MSG_SCHEDULE_SET").subscribe((res) => {
             this.errorHandler.info(res);
+            this.CronScheduleComponent.resetSchedule();
           });
           this.resetSchedule(cron);
         },

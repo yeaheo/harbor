@@ -22,8 +22,6 @@ import (
 	"net/url"
 	"strings"
 
-	// "time"
-
 	commonhttp "github.com/goharbor/harbor/src/common/http"
 	"github.com/goharbor/harbor/src/common/utils"
 )
@@ -130,9 +128,18 @@ func (r *Registry) Catalog() ([]string, error) {
 	return repos, nil
 }
 
-// Ping ...
+// Ping checks by Head method
 func (r *Registry) Ping() error {
-	req, err := http.NewRequest(http.MethodHead, buildPingURL(r.Endpoint.String()), nil)
+	return r.ping(http.MethodHead)
+}
+
+// PingGet checks by Get method
+func (r *Registry) PingGet() error {
+	return r.ping(http.MethodGet)
+}
+
+func (r *Registry) ping(method string) error {
+	req, err := http.NewRequest(method, buildPingURL(r.Endpoint.String()), nil)
 	if err != nil {
 		return err
 	}
@@ -156,4 +163,22 @@ func (r *Registry) Ping() error {
 		Code:    resp.StatusCode,
 		Message: string(b),
 	}
+}
+
+// PingSimple checks whether the registry is available. It checks the connectivity and certificate (if TLS enabled)
+// only, regardless of credential.
+func (r *Registry) PingSimple() error {
+	err := r.Ping()
+	if err == nil {
+		return nil
+	}
+	httpErr, ok := err.(*commonhttp.Error)
+	if !ok {
+		return err
+	}
+	if httpErr.Code == http.StatusUnauthorized ||
+		httpErr.Code == http.StatusForbidden {
+		return nil
+	}
+	return httpErr
 }

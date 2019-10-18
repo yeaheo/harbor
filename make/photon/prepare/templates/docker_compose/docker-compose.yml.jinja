@@ -1,4 +1,4 @@
-version: '2'
+version: '2.3'
 services:
   log:
     image: goharbor/harbor-log:{{version}}
@@ -14,7 +14,8 @@ services:
       - SETUID
     volumes:
       - {{log_location}}/:/var/log/docker/:z
-      - ./common/config/log/:/etc/logrotate.d/:z
+      - ./common/config/log/logrotate.conf:/etc/logrotate.d/logrotate.conf:z
+      - ./common/config/log/rsyslog_docker.conf:/etc/rsyslog.d/rsyslog_docker.conf:z
     ports:
       - 127.0.0.1:1514:10514
     networks:
@@ -32,9 +33,18 @@ services:
     volumes:
       - {{data_volume}}/registry:/storage:z
       - ./common/config/registry/:/etc/registry/:z
-      - {{data_volume}}/secret/registry/root.crt:/etc/registry/root.crt:z
-{%if registry_custom_ca_bundle_storage_path %}
-      - {{data_volume}}/secret/common/custom-ca-bundle.crt:/harbor_cust_cert/custom-ca-bundle.crt:z
+      - type: bind
+        source: {{data_volume}}/secret/registry/root.crt
+        target: /etc/registry/root.crt
+{% if gcs_keyfile %}
+      - type: bind
+        source: {{gcs_keyfile}}
+        target: /etc/registry/gcs.key
+{% endif %}
+{%if registry_custom_ca_bundle_path %}
+      - type: bind
+        source: {{registry_custom_ca_bundle_path}}
+        target: /harbor_cust_cert/custom-ca-bundle.crt
 {% endif %}
     networks:
       - harbor
@@ -46,7 +56,7 @@ services:
       - log
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "registry"
   registryctl:
@@ -64,7 +74,14 @@ services:
     volumes:
       - {{data_volume}}/registry:/storage:z
       - ./common/config/registry/:/etc/registry/:z
-      - ./common/config/registryctl/config.yml:/etc/registryctl/config.yml:z
+      - type: bind
+        source: ./common/config/registryctl/config.yml
+        target: /etc/registryctl/config.yml
+{%if registry_custom_ca_bundle_path %}
+      - type: bind
+        source: {{registry_custom_ca_bundle_path}}
+        target: /harbor_cust_cert/custom-ca-bundle.crt
+{% endif %}
     networks:
       - harbor
     dns_search: .
@@ -72,9 +89,10 @@ services:
       - log
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "registryctl"
+{% if external_database == False %}
   postgresql:
     image: goharbor/harbor-db:{{version}}
     container_name: harbor-db
@@ -90,16 +108,16 @@ services:
       - {{data_volume}}/database:/var/lib/postgresql/data:z
     networks:
       harbor:
-{% if with_notary %}
+  {% if with_notary %}
       harbor-notary:
         aliases:
           - harbor-db
-{% endif %}
-{% if with_clair %}
+  {% endif %}
+  {% if with_clair %}
       harbor-clair:
         aliases:
           - harbor-db
-{% endif %}
+  {% endif %}
     dns_search: .
     env_file:
       - ./common/config/db/env
@@ -107,15 +125,15 @@ services:
       - log
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "postgresql"
+{% endif %}
   core:
     image: goharbor/harbor-core:{{version}}
     container_name: harbor-core
     env_file:
       - ./common/config/core/env
-      - ./common/config/core/config_env
     restart: always
     cap_drop:
       - ALL
@@ -123,13 +141,24 @@ services:
       - SETGID
       - SETUID
     volumes:
-      - ./common/config/core/app.conf:/etc/core/app.conf:z
-      - ./common/config/core/certificates/:/etc/core/certificates/:z
-      - {{data_volume}}/secret/core/private_key.pem:/etc/core/private_key.pem:z
-      - {{data_volume}}/secret/keys/secretkey:/etc/core/key:z
       - {{data_volume}}/ca_download/:/etc/core/ca/:z
       - {{data_volume}}/psc/:/etc/core/token/:z
       - {{data_volume}}/:/data/:z
+      - ./common/config/core/certificates/:/etc/core/certificates/:z
+      - type: bind
+        source: ./common/config/core/app.conf
+        target: /etc/core/app.conf
+      - type: bind
+        source: {{data_volume}}/secret/core/private_key.pem
+        target: /etc/core/private_key.pem
+      - type: bind
+        source: {{data_volume}}/secret/keys/secretkey
+        target: /etc/core/key
+{% if uaa_ca_file %}
+      - type: bind
+        source: {{uaa_ca_file}}
+        target: /etc/core/certificates/uaa_ca.pem
+{% endif %}
     networks:
       harbor:
 {% if with_notary %}
@@ -149,9 +178,15 @@ services:
     depends_on:
       - log
       - registry
+{% if external_redis == False %}
+      - redis
+{% endif %}
+{% if external_database == False %}
+      - postgresql
+{% endif %}
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "core"
   portal:
@@ -170,7 +205,6 @@ services:
     dns_search: .
     depends_on:
       - log
-      - core
     logging:
       driver: "syslog"
       options:
@@ -191,7 +225,9 @@ services:
       - SETUID
     volumes:
       - {{data_volume}}/job_logs:/var/log/jobs:z
-      - ./common/config/jobservice/config.yml:/etc/jobservice/config.yml:z
+      - type: bind
+        source: ./common/config/jobservice/config.yml
+        target: /etc/jobservice/config.yml
     networks:
       - harbor
 {% if with_clair %}
@@ -199,13 +235,13 @@ services:
 {% endif %}
     dns_search: .
     depends_on:
-      - redis
       - core
     logging:
       driver: "syslog"
       options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "jobservice"
+{% if external_redis == False %}
   redis:
     image: goharbor/redis-photon:{{redis_version}}
     container_name: redis
@@ -220,11 +256,11 @@ services:
       - {{data_volume}}/redis:/var/lib/redis
     networks:
       harbor:
-{% if with_chartmuseum %}
+  {% if with_chartmuseum %}
       harbor-chartmuseum:
           aliases:
             - redis
-{% endif %}
+  {% endif %}
     dns_search: .
     depends_on:
       - log
@@ -233,8 +269,9 @@ services:
       options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "redis"
+{% endif %}
   proxy:
-    image: goharbor/nginx-photon:{{redis_version}}
+    image: goharbor/nginx-photon:{{version}}
     container_name: nginx
     restart: always
     cap_drop:
@@ -247,8 +284,7 @@ services:
     volumes:
       - ./common/config/nginx:/etc/nginx:z
 {% if protocol == 'https' %}
-      - {{data_volume}}/secret/nginx/server.key:/etc/nginx/cert/server.key
-      - {{data_volume}}/secret/nginx/server.crt:/etc/nginx/cert/server.crt
+      - {{data_volume}}/secret/cert:/etc/cert:z
 {% endif %}
     networks:
       - harbor
@@ -257,18 +293,21 @@ services:
 {% endif %}
     dns_search: .
     ports:
-      - 80:80
-      - 443:443
+      - {{http_port}}:8080
+{% if protocol == 'https' %}
+      - {{https_port}}:8443
+{% endif %}
+{% if with_notary %}
       - 4443:4443
+{% endif %}
     depends_on:
-      - postgresql
       - registry
       - core
       - portal
       - log
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "proxy"
 {% if with_notary %}
@@ -282,16 +321,22 @@ services:
     dns_search: .
     volumes:
       - ./common/config/notary:/etc/notary:z
-      - {{data_volume}}/secret/notary/notary-signer-ca.crt:/etc/notary/notary-signer-ca.crt:z
-      - {{data_volume}}/secret/registry/root.crt:/etc/notary/root.crt:z
+      - type: bind
+        source: {{data_volume}}/secret/notary/notary-signer-ca.crt
+        target: /etc/notary/notary-signer-ca.crt
+      - type: bind
+        source: {{data_volume}}/secret/registry/root.crt
+        target: /etc/notary/root.crt
     env_file:
       - ./common/config/notary/server_env
     depends_on:
+  {% if external_database == False %}
       - postgresql
+  {% endif %}
       - notary-signer
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "notary-server"
   notary-signer:
@@ -306,15 +351,22 @@ services:
     dns_search: .
     volumes:
       - ./common/config/notary:/etc/notary:z
-      - {{data_volume}}/secret/notary/notary-signer.crt:/etc/notary/notary-signer.crt:z
-      - {{data_volume}}/secret/notary/notary-signer.key:/etc/notary/notary-signer.key:z
+      - type: bind
+        source: {{data_volume}}/secret/notary/notary-signer.crt
+        target: /etc/notary/notary-signer.crt
+      - type: bind
+        source: {{data_volume}}/secret/notary/notary-signer.key
+        target: /etc/notary/notary-signer.key
     env_file:
       - ./common/config/notary/signer_env
     depends_on:
+      - log
+  {% if external_database == False %}
       - postgresql
+  {% endif %}
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "notary-signer"
 {% endif %}
@@ -334,19 +386,49 @@ services:
     cpu_quota: 50000
     dns_search: .
     depends_on:
+      - log
+  {% if external_database == False %}
       - postgresql
+  {% endif %}
     volumes:
-      - ./common/config/clair/config.yaml:/etc/clair/config.yaml:z
-{%if registry_custom_ca_bundle_storage_path %}
-      - {{data_volume}}/secret/common/custom-ca-bundle.crt:/harbor_cust_cert/custom-ca-bundle.crt:z
-{% endif %}
+      - type: bind
+        source: ./common/config/clair/config.yaml
+        target: /etc/clair/config.yaml
+  {%if registry_custom_ca_bundle_path %}
+      - type: bind
+        source: {{registry_custom_ca_bundle_path}}
+        target: /harbor_cust_cert/custom-ca-bundle.crt
+  {% endif %}
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "clair"
     env_file:
       ./common/config/clair/clair_env
+  clair-adapter:
+    networks:
+      - harbor-clair
+    container_name: clair-adapter
+    image: goharbor/clair-adapter-photon:{{clair_adapter_version}}
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    cpu_quota: 50000
+    dns_search: .
+    depends_on:
+      - clair
+    logging:
+      driver: "syslog"
+      options:
+        syslog-address: "tcp://127.0.0.1:1514"
+        tag: "clair-adapter"
+    env_file:
+      ./common/config/clair-adapter/env
 {% endif %}
 {% if with_chartmuseum %}
   chartmuseum:
@@ -364,16 +446,23 @@ services:
       - harbor-chartmuseum
     dns_search: .
     depends_on:
-      - redis
+      - log
     volumes:
       - {{data_volume}}/chart_storage:/chart_storage:z
       - ./common/config/chartserver:/etc/chartserver:z
-{%if registry_custom_ca_bundle_storage_path %}
-      - {{data_volume}}/secret/common/custom-ca-bundle.crt:/harbor_cust_cert/custom-ca-bundle.crt:z
+{% if gcs_keyfile %}
+      - type: bind
+        source: {{gcs_keyfile}}
+        target: /etc/chartserver/gcs.key
+{% endif %}
+{%if registry_custom_ca_bundle_path %}
+      - type: bind
+        source: {{registry_custom_ca_bundle_path}}
+        target: /harbor_cust_cert/custom-ca-bundle.crt
 {% endif %}
     logging:
       driver: "syslog"
-      options:  
+      options:
         syslog-address: "tcp://127.0.0.1:1514"
         tag: "chartmuseum"
     env_file:

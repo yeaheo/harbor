@@ -85,13 +85,23 @@ export class Configuration {
     verify_remote_cert: BoolValueItem;
     robot_token_duration: NumberValueItem;
     token_expiration: NumberValueItem;
-    cfg_expiration: NumberValueItem;
     scan_all_policy: ComplexValueItem;
     read_only: BoolValueItem;
+    notification_enable: BoolValueItem;
     http_authproxy_endpoint?: StringValueItem;
-    http_authproxy_skip_cert_verify?: BoolValueItem;
-    http_authproxy_always_onboard?: BoolValueItem;
-
+    http_authproxy_tokenreview_endpoint?: StringValueItem;
+    http_authproxy_verify_cert?: BoolValueItem;
+    http_authproxy_skip_search?: BoolValueItem;
+    oidc_name?: StringValueItem;
+    oidc_endpoint?: StringValueItem;
+    oidc_client_id?: StringValueItem;
+    oidc_client_secret?: StringValueItem;
+    oidc_verify_cert?: BoolValueItem;
+    oidc_scope?: StringValueItem;
+    count_per_project: NumberValueItem;
+    storage_per_project: NumberValueItem;
+    cfg_expiration: NumberValueItem;
+    oidc_groups_claim: StringValueItem;
     public constructor() {
         this.auth_mode = new StringValueItem("db_auth", true);
         this.project_creation_restriction = new StringValueItem("everyone", true);
@@ -123,7 +133,7 @@ export class Configuration {
         this.email_password = new StringValueItem("", true);
         this.email_insecure = new BoolValueItem(false, true);
         this.token_expiration = new NumberValueItem(30, true);
-        this.robot_token_duration = new NumberValueItem(30, true);
+        this.robot_token_duration = new NumberValueItem(30 * (60 * 24), true);
         this.cfg_expiration = new NumberValueItem(30, true);
         this.verify_remote_cert = new BoolValueItem(false, true);
         this.scan_all_policy = new ComplexValueItem({
@@ -133,8 +143,19 @@ export class Configuration {
             }
         }, true);
         this.read_only = new BoolValueItem(false, true);
+        this.notification_enable = new BoolValueItem(false, true);
         this.http_authproxy_endpoint = new StringValueItem("", true);
-        this.http_authproxy_skip_cert_verify = new BoolValueItem(false, true);
-        this.http_authproxy_always_onboard = new BoolValueItem(false, true);
+        this.http_authproxy_tokenreview_endpoint = new StringValueItem("", true);
+        this.http_authproxy_verify_cert = new BoolValueItem(false, true);
+        this.http_authproxy_skip_search = new BoolValueItem(false, true);
+        this.oidc_name = new StringValueItem('', true);
+        this.oidc_endpoint = new StringValueItem('', true);
+        this.oidc_client_id = new StringValueItem('', true);
+        this.oidc_client_secret = new StringValueItem('', true);
+        this.oidc_verify_cert = new BoolValueItem(false, true);
+        this.oidc_scope = new StringValueItem('', true);
+        this.oidc_groups_claim = new StringValueItem('', true);
+        this.count_per_project = new NumberValueItem(-1, true);
+        this.storage_per_project = new NumberValueItem(-1, true);
     }
 }

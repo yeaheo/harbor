@@ -22,10 +22,14 @@ import (
 	"github.com/garyburd/redigo/redis"
 	"github.com/goharbor/harbor/src/common"
 	"github.com/goharbor/harbor/src/common/config"
+	"github.com/goharbor/harbor/src/common/dao"
+	common_quota "github.com/goharbor/harbor/src/common/quota"
 	"github.com/goharbor/harbor/src/common/registryctl"
-	"github.com/goharbor/harbor/src/jobservice/env"
+	"github.com/goharbor/harbor/src/jobservice/job"
 	"github.com/goharbor/harbor/src/jobservice/logger"
+	"github.com/goharbor/harbor/src/pkg/types"
 	"github.com/goharbor/harbor/src/registryctl/client"
+	"strconv"
 )
 
 const (
@@ -56,12 +60,12 @@ func (gc *GarbageCollector) ShouldRetry() bool {
 }
 
 // Validate implements the interface in job/Interface
-func (gc *GarbageCollector) Validate(params map[string]interface{}) error {
+func (gc *GarbageCollector) Validate(params job.Parameters) error {
 	return nil
 }
 
 // Run implements the interface in job/Interface
-func (gc *GarbageCollector) Run(ctx env.JobContext, params map[string]interface{}) error {
+func (gc *GarbageCollector) Run(ctx job.Context, params job.Parameters) error {
 	if err := gc.init(ctx, params); err != nil {
 		return err
 	}
@@ -88,17 +92,20 @@ func (gc *GarbageCollector) Run(ctx env.JobContext, params map[string]interface{
 	if err := gc.cleanCache(); err != nil {
 		return err
 	}
+	if err := gc.ensureQuota(); err != nil {
+		gc.logger.Warningf("failed to align quota data in gc job, with error: %v", err)
+	}
 	gc.logger.Infof("GC results: status: %t, message: %s, start: %s, end: %s.", gcr.Status, gcr.Msg, gcr.StartTime, gcr.EndTime)
 	gc.logger.Infof("success to run gc in job.")
 	return nil
 }
 
-func (gc *GarbageCollector) init(ctx env.JobContext, params map[string]interface{}) error {
+func (gc *GarbageCollector) init(ctx job.Context, params job.Parameters) error {
 	registryctl.Init()
 	gc.registryCtlClient = registryctl.RegistryCtlClient
 	gc.logger = ctx.GetLogger()
 
-	errTpl := "Failed to get required property: %s"
+	errTpl := "failed to get required property: %s"
 	if v, ok := ctx.Get(common.CoreURL); ok && len(v.(string)) > 0 {
 		gc.CoreURL = v.(string)
 	} else {
@@ -165,7 +172,7 @@ func (gc *GarbageCollector) cleanCache() error {
 
 func delKeys(con redis.Conn, pattern string) error {
 	iter := 0
-	keys := []string{}
+	keys := make([]string, 0)
 	for {
 		arr, err := redis.Values(con.Do("SCAN", iter, "MATCH", pattern))
 		if err != nil {
@@ -189,6 +196,34 @@ func delKeys(con redis.Conn, pattern string) error {
 		_, err := con.Do("DEL", key)
 		if err != nil {
 			return fmt.Errorf("failed to clean registry cache %v", err)
+		}
+	}
+	return nil
+}
+
+func (gc *GarbageCollector) ensureQuota() error {
+	projects, err := dao.GetProjects(nil)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		pSize, err := dao.CountSizeOfProject(project.ProjectID)
+		if err != nil {
+			gc.logger.Warningf("error happen on counting size of project:%d by artifact, error:%v, just skip it.", project.ProjectID, err)
+			continue
+		}
+		quotaMgr, err := common_quota.NewManager("project", strconv.FormatInt(project.ProjectID, 10))
+		if err != nil {
+			gc.logger.Errorf("Error occurred when to new quota manager %v, just skip it.", err)
+			continue
+		}
+		if err := quotaMgr.SetResourceUsage(types.ResourceStorage, pSize); err != nil {
+			gc.logger.Errorf("cannot ensure quota for the project: %d, err: %v, just skip it.", project.ProjectID, err)
+			continue
+		}
+		if err := dao.RemoveUntaggedBlobs(project.ProjectID); err != nil {
+			gc.logger.Errorf("cannot delete untagged blobs of project: %d, err: %v, just skip it.", project.ProjectID, err)
+			continue
 		}
 	}
 	return nil

@@ -4,18 +4,22 @@ import time
 import base
 import swagger_client
 from docker_api import DockerAPI
+from swagger_client.rest import ApiException
 
-def pull_harbor_image(registry, username, password, image, tag, expected_error_message = None):
+def pull_harbor_image(registry, username, password, image, tag, expected_login_error_message = None, expected_error_message = None):
     _docker_api = DockerAPI()
-    _docker_api.docker_login(registry, username, password)
+    _docker_api.docker_login(registry, username, password, expected_error_message = expected_login_error_message)
+    if expected_login_error_message != None:
+        return
     time.sleep(2)
     _docker_api.docker_image_pull(r'{}/{}'.format(registry, image), tag = tag, expected_error_message = expected_error_message)
 
-def push_image_to_project(project_name, registry, username, password, image, tag, expected_error_message = None):
+def push_image_to_project(project_name, registry, username, password, image, tag, expected_login_error_message = None, expected_error_message = None):
     _docker_api = DockerAPI()
-    _docker_api.docker_login(registry, username, password)
+    _docker_api.docker_login(registry, username, password, expected_error_message = expected_login_error_message)
     time.sleep(2)
-
+    if expected_login_error_message != None:
+        return
     _docker_api.docker_image_pull(image, tag = tag)
     time.sleep(2)
 
@@ -25,6 +29,14 @@ def push_image_to_project(project_name, registry, username, password, image, tag
     _docker_api.docker_image_push(new_harbor_registry, new_tag, expected_error_message = expected_error_message)
 
     return r'{}/{}'.format(project_name, image), new_tag
+
+def push_special_image_to_project(project_name, registry, username, password, image, tags=None, size=1, expected_login_error_message=None, expected_error_message = None):
+    _docker_api = DockerAPI()
+    _docker_api.docker_login(registry, username, password, expected_error_message = expected_login_error_message)
+    time.sleep(2)
+    if expected_login_error_message != None:
+        return
+    _docker_api.docker_image_build(r'{}/{}/{}'.format(registry, project_name, image), tags = tags, size=size, expected_error_message=expected_error_message)
 
 def is_repo_exist_in_project(repositories, repo_name):
     result = False
@@ -88,20 +100,21 @@ class Repository(base.Base):
         if tag.scan_overview != None:
             raise Exception("Image should be <Not Scanned> state!")
 
-    def check_image_scan_result(self, repo_name, tag, expected_scan_status = "finished", **kwargs):
+    def check_image_scan_result(self, repo_name, tag, expected_scan_status = "Success", **kwargs):
         timeout_count = 30
         while True:
             time.sleep(5)
             timeout_count = timeout_count - 1
             if (timeout_count == 0):
-                break            
+                break
             _tag = self.get_tag(repo_name, tag, **kwargs)
-            if _tag.name == tag and _tag.scan_overview !=None:
-                if _tag.scan_overview.scan_status == expected_scan_status:
-                    return
+            if _tag.name == tag and _tag.scan_overview != None:
+                for report in _tag.scan_overview.values():
+                    if report.get('scan_status') == expected_scan_status:
+                        return
         raise Exception("Scan image result is not as expected {}.".format(expected_scan_status))
 
-    def scan_image(self, repo_name, tag, expect_status_code = 200, **kwargs):
+    def scan_image(self, repo_name, tag, expect_status_code = 202, **kwargs):
         client = self._get_client(**kwargs)
         data, status_code, _ = client.repositories_repo_name_tags_tag_scan_post_with_http_info(repo_name, tag)
         base._assert_status_code(expect_status_code, status_code)
@@ -119,3 +132,19 @@ class Repository(base.Base):
                 print "sha256:", len(each_sign.hashes["sha256"])
                 return
         raise Exception(r"Signature of {}:{} is not exist!".format(repo_name, tag))
+
+    def retag_image(self, repo_name, tag, src_image, override=True, expect_status_code = 200, expect_response_body = None, **kwargs):
+        client = self._get_client(**kwargs)
+        request = swagger_client.RetagReq(tag=tag, src_image=src_image, override=override)
+
+        try:
+            data, status_code, _ = client.repositories_repo_name_tags_post_with_http_info(repo_name, request)
+        except ApiException as e:
+            base._assert_status_code(expect_status_code, e.status)
+            if expect_response_body is not None:
+                base._assert_status_body(expect_response_body, e.body)
+            return
+
+        base._assert_status_code(expect_status_code, status_code)
+        base._assert_status_code(200, status_code)
+        return data

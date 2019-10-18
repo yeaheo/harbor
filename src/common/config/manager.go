@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/goharbor/harbor/src/common"
 	"github.com/goharbor/harbor/src/common/config/metadata"
@@ -52,6 +53,7 @@ func NewRESTCfgManager(configURL, secret string) *CfgManager {
 
 // InMemoryDriver driver for unit testing
 type InMemoryDriver struct {
+	sync.Mutex
 	cfgMap map[string]interface{}
 }
 
@@ -59,11 +61,19 @@ type InMemoryDriver struct {
 // it should be invoked before get any user scope config
 // for system scope config, because it is immutable, no need to call this method
 func (d *InMemoryDriver) Load() (map[string]interface{}, error) {
-	return d.cfgMap, nil
+	d.Lock()
+	defer d.Unlock()
+	res := make(map[string]interface{})
+	for k, v := range d.cfgMap {
+		res[k] = v
+	}
+	return res, nil
 }
 
 // Save only save user config setting to driver, for example: database, REST
 func (d *InMemoryDriver) Save(cfg map[string]interface{}) error {
+	d.Lock()
+	defer d.Unlock()
 	for k, v := range cfg {
 		d.cfgMap[k] = v
 	}
@@ -200,12 +210,14 @@ func (c *CfgManager) GetDatabaseCfg() *models.Database {
 	return &models.Database{
 		Type: c.Get(common.DatabaseType).GetString(),
 		PostGreSQL: &models.PostGreSQL{
-			Host:     c.Get(common.PostGreSQLHOST).GetString(),
-			Port:     c.Get(common.PostGreSQLPort).GetInt(),
-			Username: c.Get(common.PostGreSQLUsername).GetString(),
-			Password: c.Get(common.PostGreSQLPassword).GetString(),
-			Database: c.Get(common.PostGreSQLDatabase).GetString(),
-			SSLMode:  c.Get(common.PostGreSQLSSLMode).GetString(),
+			Host:         c.Get(common.PostGreSQLHOST).GetString(),
+			Port:         c.Get(common.PostGreSQLPort).GetInt(),
+			Username:     c.Get(common.PostGreSQLUsername).GetString(),
+			Password:     c.Get(common.PostGreSQLPassword).GetString(),
+			Database:     c.Get(common.PostGreSQLDatabase).GetString(),
+			SSLMode:      c.Get(common.PostGreSQLSSLMode).GetString(),
+			MaxIdleConns: c.Get(common.PostGreSQLMaxIdleConns).GetInt(),
+			MaxOpenConns: c.Get(common.PostGreSQLMaxOpenConns).GetInt(),
 		},
 	}
 }

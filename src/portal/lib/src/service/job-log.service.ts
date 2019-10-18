@@ -1,7 +1,7 @@
 import { Injectable, Inject } from "@angular/core";
-import { Http } from "@angular/http";
+import { HttpClient } from "@angular/common/http";
 import { SERVICE_CONFIG, IServiceConfig } from "../service.config";
-import { HTTP_GET_OPTIONS } from "../utils";
+import { HTTP_GET_OPTIONS, HTTP_GET_OPTIONS_TEXT } from "../utils";
 import { map, catchError } from "rxjs/operators";
 import { Observable, throwError as observableThrowError } from "rxjs";
 /**
@@ -43,13 +43,13 @@ export class JobLogDefaultService extends JobLogService {
   _supportedJobTypes: string[];
 
   constructor(
-    private http: Http,
+    private http: HttpClient,
     @Inject(SERVICE_CONFIG) config: IServiceConfig
   ) {
     super();
-    this._replicationJobBaseUrl = config.replicationJobEndpoint
-      ? config.replicationJobEndpoint
-      : "/api/jobs/replication";
+    this._replicationJobBaseUrl = config.replicationBaseEndpoint
+      ? config.replicationBaseEndpoint
+      : "/api/replication";
     this._scanningJobBaseUrl = config.scanJobEndpoint
       ? config.scanJobEndpoint
       : "/api/jobs/scan";
@@ -58,8 +58,8 @@ export class JobLogDefaultService extends JobLogService {
 
   _getJobLog(logUrl: string): Observable<string> {
     return this.http
-      .get(logUrl, HTTP_GET_OPTIONS)
-      .pipe(map(response => response.text())
+      .get(logUrl, HTTP_GET_OPTIONS_TEXT)
+      .pipe(map(response => response)
       , catchError(error => observableThrowError(error)));
   }
 

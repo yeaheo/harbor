@@ -6,13 +6,13 @@
                 <clr-tab>
                     <button id="config-auth" clrTabLink>{{'CONFIG.AUTH' | translate}}</button>
                     <clr-tab-content id="authentication" *clrIfActive>
-                        <config-auth [allConfig]="allConfig"></config-auth>
+                        <config-auth [allConfig]="allConfig"  (refreshAllconfig)="refreshAllconfig()"></config-auth>
                     </clr-tab-content>
                 </clr-tab>
                 <clr-tab>
                     <button id="config-email" clrTabLink>{{'CONFIG.EMAIL' | translate }}</button>
                     <clr-tab-content id="email" *clrIfActive>
-                        <config-email [mailConfig]="allConfig"></config-email>
+                        <config-email [mailConfig]="allConfig" (refreshAllconfig)="refreshAllconfig()"></config-email>
                     </clr-tab-content>
                 </clr-tab>
                 <clr-tab>
@@ -32,21 +32,17 @@
 						</clr-tab-content>
 					</ng-template>
                 </clr-tab>
-                <clr-tab *ngIf="withClair">
-                    <button id="config-vulnerability" clrTabLink>{{'CONFIG.VULNERABILITY' | translate }}</button>
-					<ng-template [(clrIfActive)]="vulnerabilityActive">
-						<clr-tab-content id="vulnerability" *ngIf="withClair">
-							<vulnerability-config></vulnerability-config>
-						</clr-tab-content>
-					</ng-template>
+                <clr-tab>
+                    <button id="config-quotas" clrTabLink>{{'CONFIG.PROJECT_QUOTAS' | translate }}</button>
+                    <clr-tab-content id="project_quotas" *clrIfActive>
+                        <project-quotas [(allConfig)]="allConfig" (refreshAllconfig)="refreshAllconfig()"></project-quotas>
+                    </clr-tab-content>
                 </clr-tab>
-                <clr-tab *ngIf="hasAdminRole">
-                    <button id="config-gc" clrTabLink>{{'CONFIG.GC' | translate }}</button>
-					<ng-template [(clrIfActive)]="gcActive">
-						<clr-tab-content id="gc" *ngIf="hasAdminRole">
-							<gc-config></gc-config>
-						</clr-tab-content>
-					</ng-template>
+                <clr-tab>
+                    <button id="config-scanners" clrTabLink>{{'SCANNER.SCANNERS' | translate}}</button>
+                    <clr-tab-content id="scanners" *clrIfActive>
+                        <config-scanner></config-scanner>
+                    </clr-tab-content>
                 </clr-tab>
         </clr-tabs>
     </div>

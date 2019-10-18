@@ -17,12 +17,24 @@
  **
  * returns {string}
  */
-import { Response } from "@angular/http";
 
 export const errorHandler = function (error: any): string {
     if (!error) {
         return "UNKNOWN_ERROR";
     }
+    try {
+        return JSON.parse(error.error).message;
+    } catch (err) { }
+    if (typeof error.error === "string") {
+        return error.error;
+    }
+    if (error.error && error.error.message) {
+        return error.error.message;
+    }
+    if (error.message) {
+        return error.message;
+    }
+
     if (!(error.statusCode || error.status)) {
         // treat as string message
         return '' + error;
@@ -46,11 +58,4 @@ export const errorHandler = function (error: any): string {
                 return "UNKNOWN_ERROR";
         }
     }
-};
-
-export const extractJson = (res: Response) => {
-    if (res.text() === '') {
-        return [];
-    }
-    return (res.json() || []);
 };

@@ -11,16 +11,16 @@ import { Robot } from "./robot";
 import { Project } from "./../project";
 import { finalize, catchError, map } from "rxjs/operators";
 import { TranslateService } from "@ngx-translate/core";
-import { Subscription, forkJoin, Observable, throwError } from "rxjs";
+import { Subscription, forkJoin, Observable, throwError as observableThrowError } from "rxjs";
 import { MessageHandlerService } from "../../shared/message-handler/message-handler.service";
 import { RobotService } from "./robot-account.service";
 import { ConfirmationMessage } from "../../shared/confirmation-dialog/confirmation-message";
+import { ConfirmationDialogService } from "../../shared/confirmation-dialog/confirmation-dialog.service";
 import {
   ConfirmationTargets,
   ConfirmationState,
   ConfirmationButtons
 } from "../../shared/shared.const";
-import { ConfirmationDialogService } from "../../shared/confirmation-dialog/confirmation-dialog.service";
 import {
   operateChanges,
   OperateInfo,
@@ -28,16 +28,16 @@ import {
   OperationState,
   UserPermissionService,
   USERSTATICPERMISSION,
-  ErrorHandler
+  ErrorHandler,
+  errorHandler as errorHandFn
 } from "@harbor/ui";
-
 @Component({
   selector: "app-robot-account",
   templateUrl: "./robot-account.component.html",
   styleUrls: ["./robot-account.component.scss"]
 })
 export class RobotAccountComponent implements OnInit, OnDestroy {
-  @ViewChild(AddRobotComponent)
+  @ViewChild(AddRobotComponent, {static: false})
   addRobotComponent: AddRobotComponent;
   selectedRow: Robot[] = [];
   robotsCopy: Robot[] = [];
@@ -140,7 +140,7 @@ export class RobotAccountComponent implements OnInit, OnDestroy {
     let robotsDelete$ = robots.map(robot => this.delOperate(robot));
     forkJoin(robotsDelete$)
       .pipe(
-        catchError(err => throwError(err)),
+        catchError(err => observableThrowError(err)),
         finalize(() => {
           this.retrieve();
           this.selectedRow = [];
@@ -163,9 +163,15 @@ export class RobotAccountComponent implements OnInit, OnDestroy {
       .pipe(
         map(
           () => operateChanges(operMessage, OperationState.success),
-          err => operateChanges(operMessage, OperationState.failure, err)
+          catchError(error => {
+            const errorMsg = errorHandFn(error);
+            this.translate.get(errorMsg).subscribe(res =>
+              operateChanges(operMessage, OperationState.failure, res)
+            );
+            return observableThrowError(errorMsg);
+          }
         )
-      );
+      ));
   }
 
   createAccount(created: boolean): void {

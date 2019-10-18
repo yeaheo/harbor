@@ -8,6 +8,9 @@ import {
   SimpleChange
 } from "@angular/core";
 import { OriginCron } from "../service/interface";
+import { cronRegex } from "../utils";
+import { TranslateService } from "@ngx-translate/core";
+import { ErrorHandler } from "../error-handler/error-handler";
 const SCHEDULE_TYPE = {
   NONE: "None",
   DAILY: "Daily",
@@ -24,6 +27,8 @@ export class CronScheduleComponent implements OnChanges {
   @Input() originCron: OriginCron;
   @Input() labelEdit: string;
   @Input() labelCurrent: string;
+  @Input() disabled: boolean;
+  dateInvalid: boolean;
   originScheduleType: string;
   oriCron: string;
   cronString: string;
@@ -31,6 +36,10 @@ export class CronScheduleComponent implements OnChanges {
   SCHEDULE_TYPE = SCHEDULE_TYPE;
   scheduleType: string;
   @Output() inputvalue = new EventEmitter<string>();
+  constructor(
+    private translate: TranslateService,
+    private errorHandler: ErrorHandler,
+    ) { }
 
   ngOnChanges(changes: SimpleChanges): void {
     let cronChange: SimpleChange = changes["originCron"];
@@ -41,26 +50,47 @@ export class CronScheduleComponent implements OnChanges {
   }
   editSchedule() {
     if (!this.originScheduleType) {
+      this.translate.get('SCHEDULE.NOSCHEDULE').subscribe(res => this.errorHandler.error(res));
       return;
     }
     this.isEditMode = true;
     this.scheduleType = this.originScheduleType;
     if (this.scheduleType && this.scheduleType === SCHEDULE_TYPE.CUSTOM) {
       this.cronString = this.oriCron;
+      this.dateInvalid = !cronRegex(this.cronString);
     } else {
       this.cronString = "";
+      this.dateInvalid = false;
+    }
+  }
+
+  inputInvalid() {
+    this.dateInvalid = !cronRegex(this.cronString);
+  }
+
+  blurInvalid() {
+    if (!this.cronString) {
+      this.dateInvalid = true;
     }
   }
 
   public resetSchedule() {
     this.originScheduleType = this.scheduleType;
-    this.oriCron = this.cronString;
+    this.oriCron = this.cronString.replace(/\s+/g, " ").trim();
     this.isEditMode = false;
   }
 
   save(): void {
+    if (this.scheduleType === SCHEDULE_TYPE.CUSTOM ) {
+      if (this.cronString === '') {
+        this.dateInvalid = true;
+      }
+      if (this.dateInvalid) {
+        return;
+      }
+    }
+
     let scheduleTerm: string = "";
-    this.resetSchedule();
     if (this.scheduleType && this.scheduleType === SCHEDULE_TYPE.NONE) {
       scheduleTerm = "";
     } else if (this.scheduleType && this.scheduleType === SCHEDULE_TYPE.HOURLY) {

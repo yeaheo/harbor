@@ -101,21 +101,17 @@ export class AuditLogComponent implements OnInit {
       .subscribe(
         response => {
           this.totalRecordCount = Number.parseInt(response.headers.get('x-total-count'));
-          this.auditLogs = response.json();
+          this.auditLogs = response.body;
         },
         error => {
-          this.router.navigate(['/harbor', 'projects']);
           this.messageHandlerService.handleError(error);
         }
       );
   }
 
-  retrievePage(state: State) {
-    if (state && state.page) {
-      this.queryParam.page = Math.ceil((state.page.to + 1) / this.pageSize);
-      this.currentPage = this.queryParam.page;
-      this.retrieve();
-    }
+  retrievePage() {
+    this.queryParam.page = this.currentPage;
+    this.retrieve();
   }
 
   doSearchAuditLogs(searchUsername: string): void {

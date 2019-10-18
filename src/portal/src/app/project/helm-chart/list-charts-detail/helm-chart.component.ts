@@ -10,11 +10,10 @@ import {
 } from "@angular/core";
 import { NgForm } from '@angular/forms';
 import { TranslateService } from "@ngx-translate/core";
-import {
-  State, ErrorHandler, SystemInfo, SystemInfoService, DEFAULT_PAGE_SIZE, downloadFile
+import { State, ErrorHandler, SystemInfo, SystemInfoService, DEFAULT_PAGE_SIZE, downloadFile
   , OperationService, UserPermissionService, USERSTATICPERMISSION, OperateInfo, OperationState, operateChanges
-} from "@harbor/ui";
-import { forkJoin, throwError, Observable } from "rxjs";
+  , errorHandler as errorHandFn } from "@harbor/ui";
+import { forkJoin, throwError as observableThrowError, Observable } from "rxjs";
 import { finalize, map, catchError } from "rxjs/operators";
 import { HelmChartItem } from "../helm-chart.interface.service";
 import { HelmChartService } from "../helm-chart.service";
@@ -69,9 +68,9 @@ export class HelmChartComponent implements OnInit {
   totalCount = 0;
   currentState: State;
 
-  @ViewChild('chartUploadForm') uploadForm: NgForm;
+  @ViewChild('chartUploadForm', {static: false}) uploadForm: NgForm;
 
-  @ViewChild("confirmationDialog") confirmationDialog: ConfirmationDialogComponent;
+  @ViewChild("confirmationDialog", {static: false}) confirmationDialog: ConfirmationDialogComponent;
   hasUploadHelmChartsPermission: boolean;
   hasDownloadHelmChartsPermission: boolean;
   hasDeleteHelmChartsPermission: boolean;
@@ -202,8 +201,14 @@ export class HelmChartComponent implements OnInit {
     return this.helmChartService.deleteHelmChart(this.projectName, chartName)
       .pipe(map(
         () => operateChanges(operateMsg, OperationState.success),
-        err => operateChanges(operateMsg, OperationState.failure, err)
-      ));
+        catchError( error => {
+          const message = errorHandFn(error);
+          this.translateService.get(message).subscribe(res =>
+            operateChanges(operateMsg, OperationState.failure, res)
+          );
+          return observableThrowError(message);
+        }
+      )));
   }
 
   deleteCharts(charts: HelmChartItem[]) {
@@ -211,7 +216,7 @@ export class HelmChartComponent implements OnInit {
     let chartsDelete$ = charts.map(chart => this.deleteChart(chart.name));
     forkJoin(chartsDelete$)
       .pipe(
-        catchError(err => throwError(err)),
+        catchError(err => observableThrowError(err)),
         finalize(() => {
           this.refresh();
           this.selectedRows = [];

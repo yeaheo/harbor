@@ -9,8 +9,9 @@ import { VulnerabilityConfigComponent } from './vulnerability/vulnerability-conf
 import { RegistryConfigComponent } from './registry-config.component';
 import { ConfirmationDialogComponent } from '../confirmation-dialog/confirmation-dialog.component';
 import { GcComponent } from './gc/gc.component';
+import { GcHistoryComponent } from './gc/gc-history/gc-history.component';
 import { CronScheduleComponent } from '../cron-schedule/cron-schedule.component';
-
+import { CronTooltipComponent } from "../cron-schedule/cron-tooltip/cron-tooltip.component";
 import {
   ConfigurationService,
   ConfigurationDefaultService,
@@ -18,7 +19,7 @@ import {
   ScanningResultDefaultService,
   SystemInfoService,
   SystemInfoDefaultService,
-  SystemInfo
+  SystemInfo, SystemCVEWhitelist
 } from '../service/index';
 import { Configuration } from './config';
 import { of } from 'rxjs';
@@ -55,7 +56,12 @@ describe('RegistryConfigComponent (inline template)', () => {
     "harbor_version": "v1.1.1-rc1-160-g565110d",
     "next_scan_all": 0
   };
-
+  let mockSystemWhitelist: SystemCVEWhitelist = {
+    "expires_at": 1561996800,
+    "id": 1,
+    "items": [],
+    "project_id": 0
+  };
   beforeEach(async(() => {
     TestBed.configureTestingModule({
       imports: [
@@ -67,7 +73,9 @@ describe('RegistryConfigComponent (inline template)', () => {
         RegistryConfigComponent,
         ConfirmationDialogComponent,
         GcComponent,
-        CronScheduleComponent
+        GcHistoryComponent,
+        CronScheduleComponent,
+        CronTooltipComponent
       ],
       providers: [
         ErrorHandler,
@@ -87,7 +95,7 @@ describe('RegistryConfigComponent (inline template)', () => {
     systemInfoService = fixture.debugElement.injector.get(SystemInfoService);
     spy = spyOn(cfgService, 'getConfigurations').and.returnValue(of(mockConfig));
     spySystemInfo = spyOn(systemInfoService, 'getSystemInfo').and.returnValue(of(mockSystemInfo));
-
+    spySystemInfo = spyOn(systemInfoService, 'getSystemWhitelist').and.returnValue(of(mockSystemWhitelist));
     fixture.detectChanges();
   });
 

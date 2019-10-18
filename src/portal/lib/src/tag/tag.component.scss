@@ -21,7 +21,6 @@
 .embeded-datagrid {
   width: 98%;
   float: right;
-  /*add for issue #2688*/
 }
 
 .hidden-tag {
@@ -51,7 +50,7 @@
 
 .rightPos {
   position: absolute;
-  z-index: 600;
+  z-index: 1;
   right: 35px;
   margin-top: 20px;
   display: flex;
@@ -106,10 +105,6 @@
   position: absolute;
   left: 34px;
   top: 5px;
-}
-
-.datagrid-action-bar {
-  z-index: 10;
 }
 
 .trigger-item hbr-label-piece {
@@ -249,4 +244,8 @@ clr-datagrid {
   ::ng-deep .datagrid-table {
     position: static;
   }
+}
+
+::ng-deep .clr-form-control {
+  margin-top: 0;
 }

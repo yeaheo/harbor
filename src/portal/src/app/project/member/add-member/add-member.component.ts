@@ -23,7 +23,6 @@ import {
   OnInit,
   OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef
 } from '@angular/core';
-import { Response } from '@angular/http';
 import { NgForm } from '@angular/forms';
 import {ActivatedRoute} from "@angular/router";
 import { Subject, forkJoin } from "rxjs";
@@ -40,7 +39,10 @@ import {User} from "../../../user/user";
 import {Project} from "../../project";
 
 import { Member } from '../member';
+import { errorHandler as errorHandFn } from "@harbor/ui";
+
 import { MemberService } from '../member.service';
+import { HttpResponseBase } from '@angular/common/http';
 
 
 @Component({
@@ -62,12 +64,12 @@ export class AddMemberComponent implements AfterViewChecked, OnInit, OnDestroy {
   staticBackdrop: boolean = true;
   closable: boolean = false;
 
-  @ViewChild('memberForm')
+  @ViewChild('memberForm', {static: false})
   currentForm: NgForm;
 
   hasChanged: boolean;
 
-  @ViewChild(InlineAlertComponent)
+  @ViewChild(InlineAlertComponent, {static: false})
   inlineAlert: InlineAlertComponent;
 
   @Input() projectId: number;
@@ -103,6 +105,7 @@ export class AddMemberComponent implements AfterViewChecked, OnInit, OnDestroy {
             this.isMemberNameValid = cont.valid;
             if (cont.valid) {
               this.checkOnGoing = true;
+              this.ref.detectChanges();
               forkJoin(this.userService.getUsersNameList(cont.value, 20), this.memberService
               .listMembers(this.projectId, cont.value)).subscribe((res: Array<any>) => {
                 this.userLists = res[0];
@@ -120,13 +123,14 @@ export class AddMemberComponent implements AfterViewChecked, OnInit, OnDestroy {
                       }
                     }
                   });
+                }
                   let changeTimer = setInterval(() => this.ref.detectChanges(), 200);
                   setTimeout(() => {
                     clearInterval(changeTimer);
                   }, 2000);
-                }
               }, error => {
                 this.checkOnGoing = false;
+                this.ref.detectChanges();
               });
             } else {
               this.memberTooltip = 'MEMBER.USERNAME_IS_REQUIRED';
@@ -161,22 +165,12 @@ export class AddMemberComponent implements AfterViewChecked, OnInit, OnDestroy {
         // this.addMemberOpened = false;
       },
       error => {
-        if (error instanceof Response) {
-          let errorMessageKey: string;
-          switch (error.status) {
-            case 404:
-              errorMessageKey = 'MEMBER.USERNAME_DOES_NOT_EXISTS';
-              break;
-            case 409:
-              errorMessageKey = 'MEMBER.USERNAME_ALREADY_EXISTS';
-              break;
-            default:
-              errorMessageKey = 'MEMBER.UNKNOWN_ERROR';
-          }
+        if (error instanceof HttpResponseBase) {
           if (this.messageHandlerService.isAppLevel(error)) {
             this.messageHandlerService.handleError(error);
             // this.addMemberOpened = false;
           } else {
+          let errorMessageKey: string = errorHandFn(error);
             this.translateService
               .get(errorMessageKey)
               .subscribe(errorMessage => this.messageHandlerService.handleError(errorMessage));

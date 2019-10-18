@@ -15,50 +15,61 @@ import { map, catchError } from "rxjs/operators";
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { Injectable } from "@angular/core";
-import { Http } from "@angular/http";
+import { HttpClient } from "@angular/common/http";
 import { RobotApiRepository } from "./robot.api.repository";
+import { Robot } from "./robot";
 @Injectable()
 export class RobotService {
   constructor(
-    private http: Http,
+    private http: HttpClient,
     private robotApiRepository: RobotApiRepository
-  ) {}
-  public addRobotAccount(projecId, name, description, projectName, isPull, isPush): Observable<any> {
+  ) { }
+
+  /** addRobotAccount
+   * projectId
+   * robot: Robot
+   * projectName
+   */
+  public addRobotAccount(projectId: number, robot: Robot, projectName: string): Observable<any> {
     let access = [];
-    if ( isPull ) {
-      access.push({"resource": "/project/" + projecId + "/repository", "action": "pull"});
-      access.push({"resource": "/project/" + projectName + "/repository", "action": "pull"});
+    if (robot.access.isPullImage) {
+      access.push({ "resource": `/project/${projectId}/repository`, "action": "pull" });
     }
-    if ( isPush ) {
-      access.push({"resource": "/project/" + projecId + "/repository", "action": "push"});
-      access.push({"resource": "/project/" + projectName + "/repository", "action": "push"});
+    if (robot.access.isPushOrPullImage) {
+      access.push({ "resource": `/project/${projectId}/repository`, "action": "push" });
+    }
+    if (robot.access.isPullChart) {
+      access.push({ "resource": `/project/${projectId}/helm-chart`, "action": "read" });
+    }
+    if (robot.access.isPushChart) {
+      access.push({ "resource": `/project/${projectId}/helm-chart-version`, "action": "create" });
     }
 
     let param = {
-      name: name,
-      description: description,
-      access: access
+      name: robot.name,
+      description: robot.description,
+      access
     };
 
-    return this.robotApiRepository.postRobot(projecId, param);
+    return this.robotApiRepository.postRobot(projectId, param);
   }
 
-  public deleteRobotAccount(projecId, id): Observable<any> {
-    return this.robotApiRepository.deleteRobot(projecId, id);
+  public deleteRobotAccount(projectId, id): Observable<any> {
+    return this.robotApiRepository.deleteRobot(projectId, id);
   }
 
-  public listRobotAccount(projecId): Observable<any> {
-    return this.robotApiRepository.listRobot(projecId);
+  public listRobotAccount(projectId): Observable<any> {
+    return this.robotApiRepository.listRobot(projectId);
   }
 
-  public getRobotAccount(projecId, id): Observable<any> {
-    return this.robotApiRepository.getRobot(projecId, id);
+  public getRobotAccount(projectId, id): Observable<any> {
+    return this.robotApiRepository.getRobot(projectId, id);
   }
 
-  public toggleDisabledAccount(projecId, id, isDisabled): Observable<any> {
+  public toggleDisabledAccount(projectId, id, isDisabled): Observable<any> {
     let data = {
       Disabled: isDisabled
     };
-    return this.robotApiRepository.toggleDisabledAccount(projecId, id, data);
+    return this.robotApiRepository.toggleDisabledAccount(projectId, id, data);
   }
 }

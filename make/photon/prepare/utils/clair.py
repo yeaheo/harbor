@@ -2,12 +2,12 @@ import os, shutil
 
 from g import templates_dir, config_dir, DEFAULT_UID, DEFAULT_GID
 from .jinja import render_jinja
-from .misc import prepare_config_dir
+from .misc import prepare_dir
 
 clair_template_dir = os.path.join(templates_dir, "clair")
 
 def prepare_clair(config_dict):
-    clair_config_dir = prepare_config_dir(config_dir, "clair")
+    clair_config_dir = prepare_dir(config_dir, "clair")
 
     if os.path.exists(os.path.join(clair_config_dir, "postgresql-init.d")):
         print("Copying offline data file for clair DB")
@@ -27,19 +27,14 @@ def prepare_clair(config_dict):
     render_jinja(
         postgres_env_template,
         postgres_env_path,
-        password=config_dict['clair_db_password'])
+        **config_dict)
 
     render_jinja(
         clair_config_template,
         clair_config_path,
         uid=DEFAULT_UID,
         gid=DEFAULT_GID,
-        password= config_dict['clair_db_password'],
-        username= config_dict['clair_db_username'],
-        host= config_dict['clair_db_host'],
-        port= config_dict['clair_db_port'],
-        dbname= config_dict['clair_db'],
-        interval= config_dict['clair_updaters_interval'])
+        **config_dict)
 
     # config http proxy for Clair
     render_jinja(

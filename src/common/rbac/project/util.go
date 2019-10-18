@@ -54,6 +54,7 @@ var (
 		{Resource: rbac.ResourceSelf, Action: rbac.ActionDelete},
 
 		{Resource: rbac.ResourceMember, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceMember, Action: rbac.ActionRead},
 		{Resource: rbac.ResourceMember, Action: rbac.ActionUpdate},
 		{Resource: rbac.ResourceMember, Action: rbac.ActionDelete},
 		{Resource: rbac.ResourceMember, Action: rbac.ActionList},
@@ -75,6 +76,30 @@ var (
 		{Resource: rbac.ResourceReplicationJob, Action: rbac.ActionRead},
 		{Resource: rbac.ResourceReplicationJob, Action: rbac.ActionList},
 
+		{Resource: rbac.ResourceReplicationExecution, Action: rbac.ActionRead},
+		{Resource: rbac.ResourceReplicationExecution, Action: rbac.ActionList},
+		{Resource: rbac.ResourceReplicationExecution, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceReplicationExecution, Action: rbac.ActionUpdate},
+		{Resource: rbac.ResourceReplicationExecution, Action: rbac.ActionDelete},
+
+		{Resource: rbac.ResourceReplicationTask, Action: rbac.ActionRead},
+		{Resource: rbac.ResourceReplicationTask, Action: rbac.ActionList},
+		{Resource: rbac.ResourceReplicationTask, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceReplicationTask, Action: rbac.ActionUpdate},
+		{Resource: rbac.ResourceReplicationTask, Action: rbac.ActionDelete},
+
+		{Resource: rbac.ResourceTagRetention, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceTagRetention, Action: rbac.ActionRead},
+		{Resource: rbac.ResourceTagRetention, Action: rbac.ActionUpdate},
+		{Resource: rbac.ResourceTagRetention, Action: rbac.ActionDelete},
+		{Resource: rbac.ResourceTagRetention, Action: rbac.ActionList},
+		{Resource: rbac.ResourceTagRetention, Action: rbac.ActionOperate},
+
+		{Resource: rbac.ResourceImmutableTag, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceImmutableTag, Action: rbac.ActionUpdate},
+		{Resource: rbac.ResourceImmutableTag, Action: rbac.ActionDelete},
+		{Resource: rbac.ResourceImmutableTag, Action: rbac.ActionList},
+
 		{Resource: rbac.ResourceLabel, Action: rbac.ActionCreate},
 		{Resource: rbac.ResourceLabel, Action: rbac.ActionRead},
 		{Resource: rbac.ResourceLabel, Action: rbac.ActionUpdate},
@@ -90,7 +115,6 @@ var (
 		{Resource: rbac.ResourceRepository, Action: rbac.ActionList},
 		{Resource: rbac.ResourceRepository, Action: rbac.ActionPull},
 		{Resource: rbac.ResourceRepository, Action: rbac.ActionPush},
-		{Resource: rbac.ResourceRepository, Action: rbac.ActionPushPull}, // compatible with security all perm of project
 
 		{Resource: rbac.ResourceRepositoryLabel, Action: rbac.ActionCreate},
 		{Resource: rbac.ResourceRepositoryLabel, Action: rbac.ActionDelete},
@@ -132,6 +156,15 @@ var (
 		{Resource: rbac.ResourceRobot, Action: rbac.ActionUpdate},
 		{Resource: rbac.ResourceRobot, Action: rbac.ActionDelete},
 		{Resource: rbac.ResourceRobot, Action: rbac.ActionList},
+
+		{Resource: rbac.ResourceNotificationPolicy, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceNotificationPolicy, Action: rbac.ActionUpdate},
+		{Resource: rbac.ResourceNotificationPolicy, Action: rbac.ActionDelete},
+		{Resource: rbac.ResourceNotificationPolicy, Action: rbac.ActionList},
+		{Resource: rbac.ResourceNotificationPolicy, Action: rbac.ActionRead},
+
+		{Resource: rbac.ResourceScan, Action: rbac.ActionCreate},
+		{Resource: rbac.ResourceScan, Action: rbac.ActionRead},
 	}
 )
 

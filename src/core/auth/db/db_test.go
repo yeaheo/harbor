@@ -29,7 +29,7 @@ import (
 	coreConfig "github.com/goharbor/harbor/src/core/config"
 )
 
-var adminServerTestConfig = map[string]interface{}{
+var testConfig = map[string]interface{}{
 	common.ExtEndpoint:          "host01.com",
 	common.AUTHMode:             "db_auth",
 	common.DatabaseType:         "postgresql",
@@ -46,7 +46,6 @@ var adminServerTestConfig = map[string]interface{}{
 	common.LDAPFilter:           "",
 	common.LDAPScope:            3,
 	common.LDAPTimeout:          30,
-	common.CfgExpiration:        5,
 	common.AdminInitialPassword: "password",
 }
 
@@ -68,7 +67,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to initialize configurations: %v", err)
 	}
 
-	config.Upload(adminServerTestConfig)
+	config.Upload(testConfig)
 	retCode := m.Run()
 	os.Exit(retCode)
 }

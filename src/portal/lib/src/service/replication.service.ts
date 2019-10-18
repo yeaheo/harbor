@@ -1,20 +1,22 @@
-import { Http } from "@angular/http";
+import { HttpClient, HttpResponse } from "@angular/common/http";
 import { Injectable, Inject } from "@angular/core";
 import { SERVICE_CONFIG, IServiceConfig } from "../service.config";
 import {
   buildHttpRequestOptions,
   HTTP_JSON_OPTIONS,
-  HTTP_GET_OPTIONS
+  HTTP_GET_OPTIONS,
+  buildHttpRequestOptionsWithObserveResponse,
+  HTTP_GET_OPTIONS_OBSERVE_RESPONSE
 } from "../utils";
 import {
   ReplicationJob,
   ReplicationRule,
-  ReplicationJobItem
+  ReplicationJobItem,
+  ReplicationTasks
 } from "./interface";
 import { RequestQueryParams } from "./RequestQueryParams";
 import { map, catchError } from "rxjs/operators";
 import { Observable, throwError as observableThrowError } from "rxjs";
-
 /**
  * Define the service methods to handle the replication (rule and job) related things.
  *
@@ -57,6 +59,19 @@ export abstract class ReplicationService {
     ruleId: number | string
   ): Observable<ReplicationRule>;
 
+
+  /**
+   * Get the specified replication task.
+   *
+   * @abstract
+   * returns {(Observable<ReplicationRule>)}
+   *
+   * @memberOf ReplicationService
+   */
+  abstract getReplicationTasks(
+    executionId: number | string,
+    queryParams?: RequestQueryParams
+  ): Observable<ReplicationTasks>;
   /**
    * Create new replication rule.
    *
@@ -122,11 +137,14 @@ export abstract class ReplicationService {
    */
   abstract disableReplicationRule(
     ruleId: number | string
-  ): Observable<any> ;
+  ): Observable<any>;
 
   abstract replicateRule(
     ruleId: number | string
-  ): Observable<any> ;
+  ): Observable<any>;
+
+
+  abstract getRegistryInfo(id: number): Observable<any>;
 
   /**
    * Get the jobs for the specified replication rule.
@@ -144,9 +162,22 @@ export abstract class ReplicationService {
    *
    * @memberOf ReplicationService
    */
-  abstract getJobs(
+  abstract getExecutions(
     ruleId: number | string,
     queryParams?: RequestQueryParams
+  ): Observable<ReplicationJob>;
+
+  /**
+   * Get the specified execution.
+   *
+   * @abstract
+   *  ** deprecated param {(number | string)} endpointId
+   * returns {(Observable<ReplicationJob> | ReplicationJob)}
+   *
+   * @memberOf ReplicationService
+   */
+  abstract getExecutionById(
+    executionId: number | string
   ): Observable<ReplicationJob>;
 
   /**
@@ -178,23 +209,21 @@ export abstract class ReplicationService {
 @Injectable()
 export class ReplicationDefaultService extends ReplicationService {
   _ruleBaseUrl: string;
-  _jobBaseUrl: string;
   _replicateUrl: string;
+  _baseUrl: string;
 
   constructor(
-    private http: Http,
+    private http: HttpClient,
     @Inject(SERVICE_CONFIG) config: IServiceConfig
   ) {
     super();
     this._ruleBaseUrl = config.replicationRuleEndpoint
       ? config.replicationRuleEndpoint
-      : "/api/policies/replication";
-    this._jobBaseUrl = config.replicationJobEndpoint
-      ? config.replicationJobEndpoint
-      : "/api/jobs/replication";
+      : "/api/replication/policies";
     this._replicateUrl = config.replicationBaseEndpoint
       ? config.replicationBaseEndpoint
-      : "/api/replications";
+      : "/api/replication";
+    this._baseUrl = config.baseEndpoint ? config.baseEndpoint : "/api";
   }
 
   // Private methods
@@ -205,12 +234,19 @@ export class ReplicationDefaultService extends ReplicationService {
       rule != null &&
       rule.name !== undefined &&
       rule.name.trim() !== "" &&
-      rule.targets.length !== 0
+      (!!rule.dest_registry || !!rule.src_registry)
     );
   }
 
+  public getRegistryInfo(id): Observable<any> {
+    let requestUrl: string = `${this._baseUrl}/registries/${id}/info`;
+    return this.http
+      .get(requestUrl)
+      .pipe(catchError(error => observableThrowError(error)));
+  }
+
   public getJobBaseUrl() {
-    return this._jobBaseUrl;
+    return this._replicateUrl;
   }
 
   public getReplicationRules(
@@ -220,21 +256,21 @@ export class ReplicationDefaultService extends ReplicationService {
   ):
     | Observable<ReplicationRule[]> {
     if (!queryParams) {
-      queryParams = new RequestQueryParams();
+      queryParams = queryParams = new RequestQueryParams();
     }
 
     if (projectId) {
-      queryParams.set("project_id", "" + projectId);
+      queryParams = queryParams.set("project_id", "" + projectId);
     }
 
     if (ruleName) {
-      queryParams.set("name", ruleName);
+      queryParams = queryParams.set("name", ruleName);
     }
 
     return this.http
       .get(this._ruleBaseUrl, buildHttpRequestOptions(queryParams))
-      .pipe(map(response => response.json() as ReplicationRule[])
-      , catchError(error => observableThrowError(error)));
+      .pipe(map(response => response as ReplicationRule[])
+        , catchError(error => observableThrowError(error)));
   }
 
   public getReplicationRule(
@@ -247,8 +283,22 @@ export class ReplicationDefaultService extends ReplicationService {
     let url: string = `${this._ruleBaseUrl}/${ruleId}`;
     return this.http
       .get(url, HTTP_GET_OPTIONS)
-      .pipe(map(response => response.json() as ReplicationRule)
-      , catchError(error => observableThrowError(error)));
+      .pipe(map(response => response as ReplicationRule)
+        , catchError(error => observableThrowError(error)));
+  }
+
+  public getReplicationTasks(
+    executionId: number | string,
+    queryParams?: RequestQueryParams
+  ): Observable<ReplicationTasks> {
+    if (!executionId) {
+      return observableThrowError("Bad argument");
+    }
+    let url: string = `${this._replicateUrl}/executions/${executionId}/tasks`;
+    return this.http
+      .get(url, buildHttpRequestOptionsWithObserveResponse(queryParams))
+      .pipe(map(response => response as ReplicationTasks)
+        , catchError(error => observableThrowError(error)));
   }
 
   public createReplicationRule(
@@ -265,7 +315,7 @@ export class ReplicationDefaultService extends ReplicationService {
         HTTP_JSON_OPTIONS
       )
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 
   public updateReplicationRule(
@@ -280,7 +330,7 @@ export class ReplicationDefaultService extends ReplicationService {
     return this.http
       .put(url, JSON.stringify(rep), HTTP_JSON_OPTIONS)
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 
   public deleteReplicationRule(
@@ -294,7 +344,7 @@ export class ReplicationDefaultService extends ReplicationService {
     return this.http
       .delete(url, HTTP_JSON_OPTIONS)
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 
   public replicateRule(
@@ -304,11 +354,11 @@ export class ReplicationDefaultService extends ReplicationService {
       return observableThrowError("Bad argument");
     }
 
-    let url: string = `${this._replicateUrl}`;
+    let url: string = `${this._replicateUrl}/executions`;
     return this.http
       .post(url, { policy_id: ruleId }, HTTP_JSON_OPTIONS)
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 
   public enableReplicationRule(
@@ -323,7 +373,7 @@ export class ReplicationDefaultService extends ReplicationService {
     return this.http
       .put(url, { enabled: enablement }, HTTP_JSON_OPTIONS)
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 
   public disableReplicationRule(
@@ -337,10 +387,10 @@ export class ReplicationDefaultService extends ReplicationService {
     return this.http
       .put(url, { enabled: 0 }, HTTP_JSON_OPTIONS)
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 
-  public getJobs(
+  public getExecutions(
     ruleId: number | string,
     queryParams?: RequestQueryParams
   ): Observable<ReplicationJob> {
@@ -351,10 +401,10 @@ export class ReplicationDefaultService extends ReplicationService {
     if (!queryParams) {
       queryParams = new RequestQueryParams();
     }
-
-    queryParams.set("policy_id", "" + ruleId);
+    let url: string = `${this._replicateUrl}/executions`;
+    queryParams = queryParams.set("policy_id", "" + ruleId);
     return this.http
-      .get(this._jobBaseUrl, buildHttpRequestOptions(queryParams))
+      .get<HttpResponse<ReplicationJobItem[]>>(url, buildHttpRequestOptionsWithObserveResponse(queryParams))
       .pipe(map(response => {
         let result: ReplicationJob = {
           metadata: {
@@ -369,7 +419,42 @@ export class ReplicationDefaultService extends ReplicationService {
             result.metadata.xTotalCount = parseInt(xHeader, 0);
           }
         }
-        result.data = response.json() as ReplicationJobItem[];
+        result.data = response.body as ReplicationJobItem[];
+        if (result.metadata.xTotalCount === 0) {
+          if (result.data && result.data.length > 0) {
+            result.metadata.xTotalCount = result.data.length;
+          }
+        }
+
+        return result;
+      })
+        , catchError(error => observableThrowError(error)));
+  }
+
+  public getExecutionById(
+    executionId: number | string
+  ): Observable<ReplicationJob> {
+    if (!executionId || executionId <= 0) {
+      return observableThrowError("Bad request argument.");
+    }
+    let requestUrl: string = `${this._replicateUrl}/executions/${executionId}`;
+    return this.http
+      .get<HttpResponse<ReplicationJobItem[]>>(requestUrl, HTTP_GET_OPTIONS_OBSERVE_RESPONSE)
+      .pipe(map(response => {
+        let result: ReplicationJob = {
+          metadata: {
+            xTotalCount: 0
+          },
+          data: []
+        };
+
+        if (response && response.headers) {
+          let xHeader: string = response.headers.get("X-Total-Count");
+          if (xHeader) {
+            result.metadata.xTotalCount = parseInt(xHeader, 0);
+          }
+        }
+        result.data = response.body as ReplicationJobItem[];
         if (result.metadata.xTotalCount === 0) {
           if (result.data && result.data.length > 0) {
             result.metadata.xTotalCount = result.data.length;
@@ -388,23 +473,26 @@ export class ReplicationDefaultService extends ReplicationService {
       return observableThrowError("Bad argument");
     }
 
-    let logUrl = `${this._jobBaseUrl}/${jobId}/log`;
+    let logUrl = `${this._replicateUrl}/${jobId}/log`;
     return this.http
-      .get(logUrl, HTTP_GET_OPTIONS)
-      .pipe(map(response => response.text())
-      , catchError(error => observableThrowError(error)));
+      .get<string>(logUrl, HTTP_GET_OPTIONS)
+      .pipe(catchError(error => observableThrowError(error)));
   }
 
   public stopJobs(
     jobId: number | string
   ): Observable<any> {
+    if (!jobId || jobId <= 0) {
+      return observableThrowError("Bad request argument.");
+    }
+    let requestUrl: string = `${this._replicateUrl}/executions/${jobId}`;
+
     return this.http
       .put(
-        this._jobBaseUrl,
-        JSON.stringify({ policy_id: jobId, status: "stop" }),
+        requestUrl,
         HTTP_JSON_OPTIONS
       )
       .pipe(map(response => response)
-      , catchError(error => observableThrowError(error)));
+        , catchError(error => observableThrowError(error)));
   }
 }

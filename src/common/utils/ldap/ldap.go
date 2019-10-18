@@ -43,18 +43,8 @@ type Session struct {
 	ldapConn        *goldap.Conn
 }
 
-// LoadSystemLdapConfig - load LDAP configure from adminserver
+// LoadSystemLdapConfig - load LDAP configure
 func LoadSystemLdapConfig() (*Session, error) {
-
-	authMode, err := config.AuthMode()
-	if err != nil {
-		log.Errorf("can't load auth mode from system, error: %v", err)
-		return nil, err
-	}
-
-	if authMode != "ldap_auth" {
-		return nil, fmt.Errorf("system auth_mode isn't ldap_auth, please check configuration")
-	}
 
 	ldapConf, err := config.LDAPConf()
 
@@ -158,14 +148,8 @@ func ConnectionTestWithConfig(ldapConfig models.LdapConf) error {
 // ConnectionTestWithAllConfig - test ldap session connection, out of the scope of normal session create/close
 func ConnectionTestWithAllConfig(ldapConfig models.LdapConf, ldapGroupConfig models.LdapGroupConf) error {
 
-	authMode, err := config.AuthMode()
-	if err != nil {
-		log.Errorf("Connection test failed %v", err)
-		return err
-	}
-
 	// If no password present, use the system default password
-	if ldapConfig.LdapSearchPassword == "" && authMode == "ldap_auth" {
+	if ldapConfig.LdapSearchPassword == "" {
 
 		session, err := LoadSystemLdapConfig()
 
@@ -236,6 +220,27 @@ func (session *Session) SearchUser(username string) ([]models.LdapUser, error) {
 			}
 			u.GroupDNList = groupDNList
 		}
+
+		log.Debugf("Searching for nested groups")
+		nestedGroupDNList := []string{}
+		nestedGroupFilter := createNestedGroupFilter(ldapEntry.DN)
+		result, err := session.SearchLdap(nestedGroupFilter)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, groupEntry := range result.Entries {
+			if !contains(u.GroupDNList, groupEntry.DN) {
+				nestedGroupDNList = append(nestedGroupDNList, strings.TrimSpace(groupEntry.DN))
+				log.Debugf("Found group %v", groupEntry.DN)
+			} else {
+				log.Debugf("%v is already in GroupDNList", groupEntry.DN)
+			}
+		}
+
+		u.GroupDNList = append(u.GroupDNList, nestedGroupDNList...)
+		log.Debugf("Done searching for nested groups")
+
 		u.DN = ldapEntry.DN
 		ldapUsers = append(ldapUsers, u)
 
@@ -346,13 +351,13 @@ func (session *Session) createUserFilter(username string) string {
 		filterTag = goldap.EscapeFilter(username)
 	}
 
-	ldapFilter := session.ldapConfig.LdapFilter
+	ldapFilter := normalizeFilter(session.ldapConfig.LdapFilter)
 	ldapUID := session.ldapConfig.LdapUID
 
 	if ldapFilter == "" {
 		ldapFilter = "(" + ldapUID + "=" + filterTag + ")"
 	} else {
-		ldapFilter = "(&" + ldapFilter + "(" + ldapUID + "=" + filterTag + "))"
+		ldapFilter = "(&(" + ldapFilter + ")(" + ldapUID + "=" + filterTag + "))"
 	}
 
 	log.Debug("ldap filter :", ldapFilter)
@@ -420,6 +425,7 @@ func createGroupSearchFilter(oldFilter, groupName, groupNameAttribute string) st
 	filter := ""
 	groupName = goldap.EscapeFilter(groupName)
 	groupNameAttribute = goldap.EscapeFilter(groupNameAttribute)
+	oldFilter = normalizeFilter(oldFilter)
 	if len(oldFilter) == 0 {
 		if len(groupName) == 0 {
 			filter = groupNameAttribute + "=*"
@@ -434,4 +440,27 @@ func createGroupSearchFilter(oldFilter, groupName, groupNameAttribute string) st
 		}
 	}
 	return filter
+}
+
+func createNestedGroupFilter(userDN string) string {
+	filter := ""
+	filter = "(&(objectClass=group)(member:1.2.840.113556.1.4.1941:=" + goldap.EscapeFilter(userDN) + "))"
+	return filter
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeFilter - remove '(' and ')' in ldap filter
+func normalizeFilter(filter string) string {
+	norFilter := strings.TrimSpace(filter)
+	norFilter = strings.TrimPrefix(norFilter, "(")
+	norFilter = strings.TrimSuffix(norFilter, ")")
+	return norFilter
 }

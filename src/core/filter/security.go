@@ -17,6 +17,7 @@ package filter
 import (
 	"context"
 	"fmt"
+	"github.com/goharbor/harbor/src/common/utils/oidc"
 	"net/http"
 	"regexp"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/docker/distribution/reference"
 	"github.com/goharbor/harbor/src/common"
 	"github.com/goharbor/harbor/src/common/dao"
+	"github.com/goharbor/harbor/src/common/dao/group"
 	"github.com/goharbor/harbor/src/common/models"
 	secstore "github.com/goharbor/harbor/src/common/secret"
 	"github.com/goharbor/harbor/src/common/security"
@@ -40,15 +42,8 @@ import (
 	"github.com/goharbor/harbor/src/core/promgr/pmsdriver/admiral"
 	"strings"
 
-	"encoding/json"
-	k8s_api_v1beta1 "k8s.io/api/authentication/v1beta1"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"github.com/goharbor/harbor/src/pkg/authproxy"
+	"github.com/goharbor/harbor/src/pkg/robot"
 )
 
 // ContextValueKey for content value
@@ -65,6 +60,8 @@ const (
 
 	// PmKey is context value key for the project manager
 	PmKey ContextValueKey = "harbor_project_manager"
+	// AuthModeKey is context key for auth mode
+	AuthModeKey ContextValueKey = "harbor_auth_mode"
 )
 
 var (
@@ -109,7 +106,10 @@ func Init() {
 
 	// standalone
 	reqCtxModifiers = []ReqCtxModifier{
+		&configCtxModifier{},
 		&secretReqCtxModifier{config.SecretStore},
+		&oidcCliReqCtxModifier{},
+		&idTokenReqCtxModifier{},
 		&authProxyReqCtxModifier{},
 		&robotAuthReqCtxModifier{},
 		&basicAuthReqCtxModifier{},
@@ -140,6 +140,20 @@ func SecurityFilter(ctx *beegoctx.Context) {
 // ReqCtxModifier modifies the context of request
 type ReqCtxModifier interface {
 	Modify(*beegoctx.Context) bool
+}
+
+// configCtxModifier populates to the configuration values to context, which are to be read by subsequent
+// filters.
+type configCtxModifier struct {
+}
+
+func (c *configCtxModifier) Modify(ctx *beegoctx.Context) bool {
+	m, err := config.AuthMode()
+	if err != nil {
+		log.Warningf("Failed to get auth mode, err: %v", err)
+	}
+	addToReqContext(ctx.Request, AuthModeKey, m)
+	return false
 }
 
 type secretReqCtxModifier struct {
@@ -181,7 +195,8 @@ func (r *robotAuthReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
 		return false
 	}
 	// Do authn for robot account, as Harbor only stores the token ID, just validate the ID and disable.
-	robot, err := dao.GetRobotByID(htk.Claims.(*token.RobotClaims).TokenID)
+	ctr := robot.RobotCtr
+	robot, err := ctr.GetRobotAccount(htk.Claims.(*token.RobotClaims).TokenID)
 	if err != nil {
 		log.Errorf("failed to get robot %s: %v", robotName, err)
 		return false
@@ -205,15 +220,87 @@ func (r *robotAuthReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
 	return true
 }
 
+type oidcCliReqCtxModifier struct{}
+
+func (oc *oidcCliReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
+	path := ctx.Request.URL.Path
+	if path != "/service/token" &&
+		!strings.HasPrefix(path, "/chartrepo/") &&
+		!strings.HasPrefix(path, "/api/chartrepo/") {
+		log.Debug("OIDC CLI modifier only handles request by docker CLI or helm CLI")
+		return false
+	}
+	if ctx.Request.Context().Value(AuthModeKey).(string) != common.OIDCAuth {
+		return false
+	}
+	username, secret, ok := ctx.Request.BasicAuth()
+	if !ok {
+		return false
+	}
+
+	user, err := dao.GetUser(models.User{
+		Username: username,
+	})
+	if err != nil {
+		log.Errorf("Failed to get user: %v", err)
+		return false
+	}
+	if user == nil {
+		return false
+	}
+	if err := oidc.VerifySecret(ctx.Request.Context(), user.UserID, secret); err != nil {
+		log.Errorf("Failed to verify secret: %v", err)
+		return false
+	}
+	pm := config.GlobalProjectMgr
+	sc := local.NewSecurityContext(user, pm)
+	setSecurCtxAndPM(ctx.Request, sc, pm)
+	return true
+}
+
+type idTokenReqCtxModifier struct{}
+
+func (it *idTokenReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
+	req := ctx.Request
+	if req.Context().Value(AuthModeKey).(string) != common.OIDCAuth {
+		return false
+	}
+	if !strings.HasPrefix(ctx.Request.URL.Path, "/api") {
+		return false
+	}
+	h := req.Header.Get("Authorization")
+	token := strings.Split(h, "Bearer")
+	if len(token) < 2 {
+		return false
+	}
+	claims, err := oidc.VerifyToken(req.Context(), strings.TrimSpace(token[1]))
+	if err != nil {
+		log.Warningf("Failed to verify token, error: %v", err)
+		return false
+	}
+	u, err := dao.GetUserBySubIss(claims.Subject, claims.Issuer)
+	if err != nil {
+		log.Warningf("Failed to get user based on token claims, error: %v", err)
+		return false
+	}
+	if u == nil {
+		log.Warning("User matches token's claims is not onboarded.")
+		return false
+	}
+	u.GroupIDs, err = group.GetGroupIDByGroupName(oidc.GroupsFromToken(claims), common.OIDCGroupType)
+	if err != nil {
+		log.Errorf("Failed to get group ID list for OIDC user: %s, error: %v", u.Username, err)
+	}
+	pm := config.GlobalProjectMgr
+	sc := local.NewSecurityContext(u, pm)
+	setSecurCtxAndPM(ctx.Request, sc, pm)
+	return true
+}
+
 type authProxyReqCtxModifier struct{}
 
 func (ap *authProxyReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
-	authMode, err := config.AuthMode()
-	if err != nil {
-		log.Errorf("fail to get auth mode, %v", err)
-		return false
-	}
-	if authMode != common.HTTPAuth {
+	if ctx.Request.Context().Value(AuthModeKey).(string) != common.HTTPAuth {
 		return false
 	}
 
@@ -233,60 +320,17 @@ func (ap *authProxyReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
 		log.Errorf("User name %s doesn't meet the auth proxy name pattern", proxyUserName)
 		return false
 	}
-
 	httpAuthProxyConf, err := config.HTTPAuthProxySetting()
 	if err != nil {
 		log.Errorf("fail to get auth proxy settings, %v", err)
 		return false
 	}
-
-	// Init auth client with the auth proxy endpoint.
-	authClientCfg := &rest.Config{
-		Host: httpAuthProxyConf.TokenReviewEndpoint,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{},
-			NegotiatedSerializer: serializer.DirectCodecFactory{CodecFactory: scheme.Codecs},
-		},
-		BearerToken: proxyPwd,
-		TLSClientConfig: rest.TLSClientConfig{
-			Insecure: httpAuthProxyConf.SkipCertVerify,
-		},
-	}
-	authClient, err := rest.RESTClientFor(authClientCfg)
+	tokenReviewResponse, err := authproxy.TokenReview(proxyPwd, httpAuthProxyConf)
 	if err != nil {
-		log.Errorf("fail to create auth client, %v", err)
+		log.Errorf("fail to review token, %v", err)
 		return false
 	}
 
-	// Do auth with the token.
-	tokenReviewRequest := &k8s_api_v1beta1.TokenReview{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "TokenReview",
-			APIVersion: "authentication.k8s.io/v1beta1",
-		},
-		Spec: k8s_api_v1beta1.TokenReviewSpec{
-			Token: proxyPwd,
-		},
-	}
-	res := authClient.Post().Body(tokenReviewRequest).Do()
-	err = res.Error()
-	if err != nil {
-		log.Errorf("fail to POST auth request, %v", err)
-		return false
-	}
-	resRaw, err := res.Raw()
-	if err != nil {
-		log.Errorf("fail to get raw data of token review, %v", err)
-		return false
-	}
-
-	// Parse the auth response, check the user name and authenticated status.
-	tokenReviewResponse := &k8s_api_v1beta1.TokenReview{}
-	err = json.Unmarshal(resRaw, &tokenReviewResponse)
-	if err != nil {
-		log.Errorf("fail to decode token review, %v", err)
-		return false
-	}
 	if !tokenReviewResponse.Status.Authenticated {
 		log.Errorf("fail to auth user: %s", rawUserName)
 		return false
@@ -307,7 +351,6 @@ func (ap *authProxyReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
 		return false
 	}
 
-	log.Debug("using local database project manager")
 	pm := config.GlobalProjectMgr
 	log.Debug("creating local database security context for auth proxy...")
 	securCtx := local.NewSecurityContext(user, pm)
@@ -401,19 +444,30 @@ func (b *basicAuthReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
 type sessionReqCtxModifier struct{}
 
 func (s *sessionReqCtxModifier) Modify(ctx *beegoctx.Context) bool {
-	var user models.User
 	userInterface := ctx.Input.Session("user")
-
 	if userInterface == nil {
 		log.Debug("can not get user information from session")
 		return false
 	}
-
 	log.Debug("got user information from session")
 	user, ok := userInterface.(models.User)
 	if !ok {
 		log.Info("can not get user information from session")
 		return false
+	}
+	if ctx.Request.Context().Value(AuthModeKey).(string) == common.OIDCAuth {
+		ou, err := dao.GetOIDCUserByUserID(user.UserID)
+		if err != nil {
+			log.Errorf("Failed to get OIDC user info, error: %v", err)
+			return false
+		}
+		if ou != nil { // If user does not have OIDC metadata, it means he is not onboarded via OIDC authn,
+			// so we can skip checking the token.
+			if err := oidc.VerifyAndPersistToken(ctx.Request.Context(), ou); err != nil {
+				log.Errorf("Failed to verify token, error: %v", err)
+				return false
+			}
+		}
 	}
 	log.Debug("using local database project manager")
 	pm := config.GlobalProjectMgr

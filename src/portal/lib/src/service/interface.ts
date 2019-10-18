@@ -1,6 +1,7 @@
 import { Project } from "../project-policy-config/project";
 import { Observable } from 'rxjs';
 import { ClrModal } from '@clr/angular';
+import { HttpHeaders, HttpParams } from '@angular/common/http';
 
 /**
  * The base interface contains the general properties
@@ -63,8 +64,10 @@ export interface Tag extends Base {
   author: string;
   created: Date;
   signature?: string;
-  scan_overview?: VulnerabilitySummary;
+  scan_overview?: ScanOverview;
   labels: Label[];
+  push_time?: string;
+  pull_time?: string;
 }
 
 /**
@@ -75,13 +78,32 @@ export interface Tag extends Base {
  * extends {Base}
  */
 export interface Endpoint extends Base {
-  endpoint: string;
-  name: string;
-  username?: string;
-  password?: string;
+  credential: {
+    access_key?: string,
+    access_secret?: string,
+    type: string;
+  };
+  description: string;
   insecure: boolean;
-  type: number;
-  [key: string]: any;
+  name: string;
+  type: string;
+  url: string;
+}
+
+export interface PingEndpoint extends Base {
+  access_key?: string;
+  access_secret?: string;
+  description: string;
+  insecure: boolean;
+  name: string;
+  type: string;
+  url: string;
+}
+
+export interface Filter {
+  type: string;
+  style: string;
+  values?: string[];
 }
 
 /**
@@ -97,33 +119,35 @@ export interface ReplicationRule extends Base {
   id?: number;
   name: string;
   description: string;
-  projects: Project[];
-  targets: Endpoint[];
   trigger: Trigger;
   filters: Filter[];
-  replicate_existing_image_now?: boolean;
-  replicate_deletion?: boolean;
+  deletion?: boolean;
+  src_registry?: any;
+  dest_registry?: any;
+  src_namespaces: string[];
+  dest_namespace?: string;
+  enabled: boolean;
+  override: boolean;
 }
 
 export class Filter {
-  kind: string;
-  pattern: string;
-  constructor(kind: string, pattern: string) {
-    this.kind = kind;
-    this.pattern = pattern;
+  type: string;
+  value?: any;
+  constructor(type: string) {
+    this.type = type;
   }
 }
 
 export class Trigger {
-  kind: string;
-  schedule_param:
+  type: string;
+  trigger_settings:
     | any
     | {
       [key: string]: any | any[];
     };
-  constructor(kind: string, param: any | { [key: string]: any | any[] }) {
-    this.kind = kind;
-    this.schedule_param = param;
+  constructor(type: string, param: any | { [key: string]: any | any[] }) {
+    this.type = type;
+    this.trigger_settings = param;
   }
 }
 
@@ -146,13 +170,34 @@ export interface ReplicationJob {
  */
 export interface ReplicationJobItem extends Base {
   [key: string]: any | any[];
+  id: number;
   status: string;
-  repository: string;
   policy_id: number;
-  operation: string;
-  tags: string;
+  trigger: string;
+  total: number;
+  failed: number;
+  succeed: number;
+  in_progress: number;
+  stopped: number;
 }
 
+/**
+ * Interface for replication tasks item.
+ *
+ **
+ * interface ReplicationTasks
+ */
+export interface ReplicationTasks extends Base {
+  [key: string]: any | any[];
+  operation: string;
+  id: number;
+  execution_id: number;
+  resource_type: string;
+  src_resource: string;
+  dst_resource: string;
+  job_id: number;
+  status: string;
+}
 /**
  * Interface for storing metadata of response.
  *
@@ -215,6 +260,7 @@ export interface SystemInfo {
   harbor_version?: string;
   clair_vulnerability_status?: ClairDBStatus;
   next_scan_all?: number;
+  external_url?: string;
 }
 
 /**
@@ -244,25 +290,43 @@ export enum VulnerabilitySeverity {
 
 export interface VulnerabilityBase {
   id: string;
-  severity: VulnerabilitySeverity;
+  severity: string;
   package: string;
   version: string;
 }
 
 export interface VulnerabilityItem extends VulnerabilityBase {
-  link: string;
-  fixedVersion: string;
+  links: string[];
+  fix_version: string;
   layer?: string;
   description: string;
 }
 
 export interface VulnerabilitySummary {
-  image_digest?: string;
-  scan_status: string;
-  job_id?: number;
-  severity: VulnerabilitySeverity;
-  components: VulnerabilityComponents;
-  update_time: Date; // Use as complete timestamp
+    report_id?: string;
+    mime_type?: string;
+    scan_status?: string;
+    severity?: string;
+    duration?: number;
+    summary?: SeveritySummary;
+    start_time?: Date;
+    end_time?: Date;
+}
+export interface SeveritySummary {
+  total: number;
+  summary: {[key: string]: number};
+}
+
+export interface VulnerabilityDetail {
+  "application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"?: VulnerabilityReport;
+}
+
+export interface VulnerabilityReport {
+  vulnerabilities?: VulnerabilityItem[];
+}
+
+export interface ScanOverview {
+  "application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"?: VulnerabilitySummary;
 }
 
 export interface VulnerabilityComponents {
@@ -289,6 +353,33 @@ export interface Label {
   scope: string;
   project_id: number;
 }
+
+export interface Quota {
+  id: number;
+  ref: {
+    name: string;
+    owner_name: string;
+    id: number;
+  } | null;
+  creation_time: string;
+  update_time: string;
+  hard: {
+    count: number;
+    storage: number;
+  };
+  used: {
+    count: number;
+    storage: number;
+  };
+}
+export interface QuotaHard {
+  hard: QuotaCountStorage;
+}
+export interface QuotaCountStorage {
+  count: number;
+  storage: number;
+}
+
 export interface CardItemEvent {
   event_type: string;
   item: any;
@@ -364,3 +455,65 @@ export class OriginCron {
   cron: string;
 }
 
+export interface HttpOptionInterface {
+  headers?: HttpHeaders | {
+    [header: string]: string | string[];
+  };
+  observe?: 'body';
+  params?: HttpParams | {
+    [param: string]: string | string[];
+  };
+  reportProgress?: boolean;
+  responseType: 'json';
+  withCredentials?: boolean;
+}
+
+export interface HttpOptionTextInterface {
+  headers?: HttpHeaders | {
+    [header: string]: string | string[];
+  };
+  observe?: 'body';
+  params?: HttpParams | {
+    [param: string]: string | string[];
+  };
+  reportProgress?: boolean;
+  responseType: 'text';
+  withCredentials?: boolean;
+}
+
+
+export interface ProjectRootInterface {
+  NAME: string;
+  VALUE: number;
+  LABEL: string;
+}
+export interface SystemCVEWhitelist {
+  id: number;
+  project_id: number;
+  expires_at: number;
+  items: Array<{ "cve_id": string; }>;
+}
+export interface QuotaHardInterface {
+  count_per_project: number;
+  storage_per_project: number;
+}
+
+export interface QuotaUnitInterface {
+  UNIT: string;
+}
+export interface QuotaHardLimitInterface {
+  countLimit: number;
+  storageLimit: number;
+  storageUnit: string;
+  id?: string;
+  countUsed?: string;
+  storageUsed?: string;
+}
+export interface EditQuotaQuotaInterface {
+  editQuota: string;
+  setQuota: string;
+  countQuota: string;
+  storageQuota: string;
+  quotaHardLimitValue: QuotaHardLimitInterface | any;
+  isSystemDefaultQuota: boolean;
+}

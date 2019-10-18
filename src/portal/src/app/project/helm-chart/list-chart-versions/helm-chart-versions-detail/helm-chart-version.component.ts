@@ -8,8 +8,8 @@ import {
   Output,
   EventEmitter
 } from "@angular/core";
-import { Observable, forkJoin } from "rxjs";
-import { finalize, map } from "rxjs/operators";
+import { Observable, forkJoin, throwError as observableThrowError } from "rxjs";
+import { finalize, map, catchError } from "rxjs/operators";
 
 import { TranslateService } from "@ngx-translate/core";
 import { State,
@@ -25,7 +25,8 @@ import { State,
   operateChanges,
   OperationService,
   UserPermissionService,
-  USERSTATICPERMISSION } from "@harbor/ui";
+  USERSTATICPERMISSION,
+  errorHandler as errorHandFn } from "@harbor/ui";
 
 import { HelmChartVersion, HelmChartMaintainer } from "../../helm-chart.interface.service";
 import { HelmChartService } from "../../helm-chart.service";
@@ -39,7 +40,6 @@ import {
   ConfirmationState,
   DefaultHelmIcon,
   ResourceType,
-  Roles
 } from "../../../../shared/shared.const";
 
 @Component({
@@ -82,7 +82,7 @@ export class ChartVersionComponent implements OnInit {
 
   addLabelHeaders = 'HELM_CHART.ADD_LABEL_TO_CHART_VERSION';
 
-  @ViewChild("confirmationDialog")
+  @ViewChild("confirmationDialog", {static: false})
   confirmationDialog: ConfirmationDialogComponent;
   hasAddRemoveHelmChartVersionPermission: boolean;
   hasDownloadHelmChartVersionPermission: boolean;
@@ -95,6 +95,7 @@ export class ChartVersionComponent implements OnInit {
     public userPermissionService: UserPermissionService,
     private cdr: ChangeDetectorRef,
     private operationService: OperationService,
+    private translateService: TranslateService,
   ) { }
 
   public get registryUrl(): string {
@@ -175,8 +176,14 @@ export class ChartVersionComponent implements OnInit {
       .deleteChartVersion(this.projectName, this.chartName, version.version)
       .pipe(map(
         () => operateChanges(operateMsg, OperationState.success),
-        err => operateChanges(operateMsg, OperationState.failure, err)
-      ));
+        catchError( error => {
+          const message = errorHandFn(error);
+          this.translateService.get(message).subscribe(res =>
+            operateChanges(operateMsg, OperationState.failure, res)
+          );
+          return observableThrowError(message);
+        }
+      )));
   }
 
   deleteVersions(versions: HelmChartVersion[]) {

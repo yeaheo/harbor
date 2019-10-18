@@ -1,6 +1,3 @@
-import abc
-import subprocess
-from optparse import OptionParser
 from shutil import copyfile
 import os
 import sys
@@ -19,28 +16,14 @@ RC_UP = 102
 RC_DOWN = 103
 RC_BACKUP = 104
 RC_RESTORE = 105
-RC_UNNKNOW_TYPE = 106
+RC_UNKNOWN_TYPE = 106
 RC_GEN = 110
 
 class DBMigrator():
 
     def __init__(self, target):
-        path = "/harbor-migration/harbor-cfg/harbor.cfg"
-        env = ""
-        if os.path.exists(path):
-            temp_section = "configuration"
-            conf = StringIO.StringIO()
-            conf.write("[%s]\n" % temp_section)
-            conf.write(open(path).read())
-            conf.seek(0, os.SEEK_SET)
-            rcp = ConfigParser.RawConfigParser()
-            rcp.readfp(conf)
-            if rcp.get(temp_section, "admiral_url") != "NA":
-                env = "WITH_ADMIRAL=true"
-        else:
-            print("harbor.cfg not found, WITH_ADMIRAL will not be set to true")
         self.target = target
-        self.script = env + " ./db/run.sh"
+        self.script = "./db/run.sh"
 
     def backup(self):
         return run_cmd(self.script + " backup") == 0
@@ -60,15 +43,38 @@ class DBMigrator():
 class CfgMigrator():
 
     def __init__(self, target, output):
+        cfg_dir = "/harbor-migration/harbor-cfg"
+        cfg_out_dir = "/harbor-migration/harbor-cfg-out"
+
         self.target = target
-        self.output = output
-        self.cfg_path = "/harbor-migration/harbor-cfg/harbor.cfg"
+        self.cfg_path = self.__config_filepath(cfg_dir)
+        if not self.cfg_path:
+            self.cfg_path = os.path.join(cfg_dir, "harbor.cfg")
+
+        if output:
+            self.output = output
+        elif self.__config_filepath(cfg_out_dir):
+            self.output = self.__config_filepath(cfg_out_dir)
+        elif os.path.isdir(cfg_out_dir):
+            self.output = os.path.join(cfg_out_dir, os.path.basename(self.cfg_path))
+        else:
+            self.output = ""
+
         self.backup_path = "/harbor-migration/backup"
-        self.output_path = "/harbor-migration/output"
+        self.restore_src = self.__config_filepath(self.backup_path)
+        self.restore_tgt = os.path.join(os.path.dirname(self.cfg_path), os.path.basename(self.restore_src))
+
+    @staticmethod
+    def __config_filepath(d):
+        if os.path.isfile(os.path.join(d, "harbor.yml")):
+            return os.path.join(d, "harbor.yml")
+        elif os.path.isfile(os.path.join(d, "harbor.cfg")):
+            return os.path.join(d, "harbor.cfg")
+        return ""
 
     def backup(self):
         try:
-            copyfile(self.cfg_path, self.backup_path+"/harbor.cfg")
+            copyfile(self.cfg_path, os.path.join(self.backup_path, os.path.basename(self.cfg_path)))
             print ("Success to backup harbor.cfg.")
             return True
         except Exception as e:
@@ -76,11 +82,12 @@ class CfgMigrator():
             return False 
 
     def restore(self):
-        if not os.path.exists(self.backup_path+"/harbor.cfg"):
-            print ("Unable to restore as there is no harbor.cfg")
+        if not self.restore_src:
+            print("unable to locate harbor config file in directory: %s" % self.backup_path)
             return False
+
         try:
-            copyfile(self.backup_path+"/harbor.cfg", self.cfg_path)
+            copyfile(self.restore_src, self.restore_tgt)
             print ("Success to restore harbor.cfg.")
             return True
         except Exception as e:
@@ -92,21 +99,23 @@ class CfgMigrator():
             print ("Skip cfg up as no harbor.cfg in the path.")
             return True
 
-        if self.output and os.path.isdir(self.output_path):
-            cmd = "python ./cfg/run.py --input " + self.cfg_path + " --output " + self.output_path + "/harbor.cfg"
+        if self.output and os.path.isdir(self.output):
+            cmd = "python ./cfg/run.py --input " + self.cfg_path + " --output " + os.path.join(self.output, os.path.basename(self.cfg_path))
+        elif self.output and os.path.isfile(self.output):
+            cmd = "python ./cfg/run.py --input " + self.cfg_path + " --output " + self.output
         else:
             print ("The path of the migrated harbor.cfg is not set, the input file will be overwritten.")
             cmd = "python ./cfg/run.py --input " + self.cfg_path
 
         if self.target != '':
             cmd = cmd + " --target " + self.target
+        print("Command for config file migration: %s" % cmd)
         return run_cmd(cmd) == 0
 
     def validate(self):
         if not os.path.exists(self.cfg_path):
-            print ("Unable to loacte the harbor.cfg, please check.")
+            print ("Unable to locate the input harbor configuration file: %s, please check." % self.cfg_path)
             return False
-        print ("Success to validate harbor.cfg.")
         return True
 
 class Parameters(object):
@@ -223,7 +232,7 @@ def main():
         
         else:
             print ("Unknow action type: " + str(commandline_input.action))
-            sys.exit(RC_UNNKNOW_TYPE)     
+            sys.exit(RC_UNKNOWN_TYPE)
     except Exception as ex:
         print ("Migrator fail to execute, err: " + ex.message)
         sys.exit(RC_GEN)

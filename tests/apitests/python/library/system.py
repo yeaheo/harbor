@@ -143,15 +143,17 @@ class System(base.Base):
     def validate_gc_job_status(self, gc_id, expected_gc_status, **kwargs):
         get_gc_status_finish = False
         timeout_count = 20
-        while not (get_gc_status_finish):
+        while timeout_count > 0:
             time.sleep(5)
             status = self.get_gc_status_by_id(gc_id, **kwargs)
+            print("GC job No: {}, status: {}".format(timeout_count, status.job_status))
             if status.job_status == expected_gc_status:
                 get_gc_status_finish = True
+                break
             timeout_count = timeout_count - 1
 
         if not (get_gc_status_finish):
-            raise Exception("Scan image result is not as expected {} actual scan status is {}".format(expected_scan_status, actual_scan_status))
+            raise Exception("GC status is not as expected '{}' actual GC status is '{}'".format(expected_gc_status, status.job_status))
 
     def validate_deletion_success(self, gc_id, **kwargs):
         log_content = self.get_gc_log_by_id(gc_id, **kwargs)
@@ -166,3 +168,27 @@ class System(base.Base):
         if deleted_files_count == 0:
             raise Exception(r"Get blobs eligible for deletion count is {}, while we expect more than 1.".format(deleted_files_count))
 
+    def set_cve_whitelist(self, expires_at=None, expected_status_code=200, *cve_ids, **kwargs):
+        client = self._get_client(**kwargs)
+        cve_list = [swagger_client.CVEWhitelistItem(cve_id=c) for c in cve_ids]
+        whitelist = swagger_client.CVEWhitelist(expires_at=expires_at, items=cve_list)
+        try:
+            r = client.system_cve_whitelist_put_with_http_info(whitelist=whitelist, _preload_content=False)
+        except Exception as e:
+            base._assert_status_code(expected_status_code, e.status)
+        else:
+            base._assert_status_code(expected_status_code, r[1])
+
+    def get_cve_whitelist(self, **kwargs):
+        client = self._get_client(**kwargs)
+        return client.system_cve_whitelist_get()
+
+    def get_project_quota(self, reference, reference_id, **kwargs):
+        params={}
+        params['reference'] = reference
+        params['reference_id'] = reference_id
+
+        client = self._get_client(**kwargs)
+        data, status_code, _ = client.quotas_get_with_http_info(**params)
+        base._assert_status_code(200, status_code)
+        return data

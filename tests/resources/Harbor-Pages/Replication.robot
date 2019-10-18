@@ -17,198 +17,221 @@ Documentation  This resource provides any keywords related to the Harbor private
 Resource  ../../resources/Util.robot
 
 *** Variables ***
-${HARBOR_VERSION}  v1.1.1
 
 *** Keywords ***
+Filter Replicatin Rule
+    [Arguments]  ${ruleName}
+    ${rule_name_element}=  Set Variable  xpath=//clr-dg-cell[contains(.,'${ruleName}')]
+    Retry Element Click  ${filter_rules_btn}
+    Retry Text Input  ${filter_rules_input}  ${ruleName}
+    Retry Wait Until Page Contains Element   ${rule_name_element}
+    Capture Page Screenshot  filter_replic_${ruleName}.png
+
+Select Dest Registry
+    [Arguments]    ${endpoint}
+    Retry Element Click    ${dest_registry_dropdown_list}
+    Retry Element Click    ${dest_registry_dropdown_list}//option[contains(.,'${endpoint}')]
+
+Select Source Registry
+    [Arguments]    ${endpoint}
+    Retry Element Click    ${src_registry_dropdown_list}
+    Retry Element Click    ${src_registry_dropdown_list}//option[contains(.,'${endpoint}')]
+
+Select Trigger
+    [Arguments]    ${mode}
+    Retry Element Click    ${rule_trigger_select}
+    Retry Element Click    ${rule_trigger_select}//option[contains(.,'${mode}')]
+
+Select Destination URL
+    [Arguments]    ${type}
+    Retry Element Click    ${destination_url_xpath}
+    Retry Element Click    ${destination_url_xpath}//option[contains(.,'${type}')]
+
 Check New Rule UI Without Endpoint
-    Click Element  ${new_replication-rule_button}
-    Page Should Contain  Please add an endpoint first
-    Mouse Down  ${link_to_registries}
-    Mouse Up  ${link_to_registries}
-    Page Should Contain  Endpoint Name
+    Retry Element Click    ${new_replication-rule_button}
+    Page Should Contain    Please add an endpoint first
+    Retry Element Click    ${link_to_registries}
+    Retry Wait Until Page Contains    Endpoint URL
+    Retry Wait Element  ${new_endpoint_button}
 
 Create A New Endpoint
-    [Arguments]  ${name}  ${url}  ${username}  ${pwd}  ${save}=Y
+    [Arguments]    ${provider}    ${name}    ${url}    ${username}    ${pwd}    ${save}=Y
     #click new button
-    Click Element  xpath=${new_endpoint_button}
+    Retry Element Click  xpath=${new_endpoint_button}
     #input necessary info
-    Input Text  xpath=${destination_name_xpath}  ${name}
-    Input Text  xpath=${destination_url_xpath}  ${url}
-    Input Text  xpath=${destination_username_xpath}  ${username}
-    Input Text  xpath=${destination_password_xpath}  ${pwd}
+    Select From List By Value  ${provider_selector}  ${provider}
+    Retry Text Input  xpath=${destination_name_xpath}    ${name}
+    Run Keyword If  '${provider}' == 'harbor'  Run keyword  Retry Text Input  xpath=${destination_url_xpath}  ${url}
+    Run Keyword If  '${provider}' == 'aws-ecr' or '${provider}' == 'google-gcr'   Run keyword  Select Destination URL  ${url}
+    Run Keyword If  '${provider}' != 'google-gcr'   Retry Text Input  xpath=${destination_username_xpath}  ${username}
+    Retry Text Input  xpath=${destination_password_xpath}  ${pwd}
     #cancel verify cert since we use a selfsigned cert
-    Click Element  ${destination_insecure_xpath}
-    Run Keyword If  '${save}' == 'Y'  Run keyword  Click Element  ${replication_save_xpath}
+    Retry Element Click  ${destination_insecure_xpath}
+    Run Keyword If  '${save}' == 'Y'  Run keyword  Retry Double Keywords When Error  Retry Element Click  ${replication_save_xpath}  Retry Wait Until Page Not Contains Element  ${replication_save_xpath}
+    Run Keyword If  '${save}' == 'Y'  Run keyword  Retry Wait Until Page Contains  ${name}
     Run Keyword If  '${save}' == 'N'  No Operation
 
 Create A Rule With Existing Endpoint
-# day 1=Monday..7=Sunday timeformat 12hour+am/pm    
-    [Arguments]  ${name}  ${project_name}  ${endpoint}  ${mode}  ${plan}=Daily  ${weekday}=1  ${time}=0800a
+    [Arguments]    ${name}    ${replication_mode}    ${project_name}    ${resource_type}    ${endpoint}    ${dest_namespace}
+    ...    ${mode}=Manual
     #click new
-    Click Element  ${new_name_xpath}
+    Retry Element Click    ${new_name_xpath}
     #input name
-    Input Text  ${rule_name}  ${name}
-    #input descripiton,here skip, leave it blank
-    #source projects, input
-    Input Text  ${source_project}  ${project_name}
+    Retry Text Input    ${rule_name}    ${name}
+    Run Keyword If    '${replication_mode}' == 'push'  Run Keywords  Retry Element Click  ${replication_mode_radio_push}
+    ...    AND  Select Dest Registry  ${endpoint}
+    ...    ELSE  Run Keywords  Retry Element Click  ${replication_mode_radio_pull}
+    ...    AND  Select Source Registry  ${endpoint}
     #set filter
-    Click Element  ${source_image_filter_add}
-    Input Text  ${source_iamge_repo_filter}  *
-    Click Element  ${source_image_filter_add}
-    Input Text  ${source_image_tag_filter}  *
-    #select endpoint
-    Click Element  ${rule_target_select}
-    Wait Until Element Is Visible  //select[@id='ruleTarget']//option[contains(.,'${endpoint}')]
-    Click Element  //select[@id='ruleTarget']//option[contains(.,'${endpoint}')]
-    #set trigger  
-    Click Element  ${rule_trigger_select}
-    Wait Until Element Is Visible  //select[@id='ruleTrigger']//option[contains(.,'${mode}')]
-    Click Element  //select[@id='ruleTrigger']//option[contains(.,'${mode}')]
-    Run Keyword If  '${mode}' == 'Scheduled'  Setting Replicaiton Schedule  ${plan}  ${weekday}  ${time}
+    Retry Text Input    ${source_project}    ${project_name}
+    Run Keyword And Ignore Error    Select From List By Value    ${rule_resource_selector}    ${resource_type}
+    Retry Text Input    ${dest_namespace_xpath}    ${dest_namespace}
+    #set trigger
+    Select Trigger  ${mode}
+    Run Keyword If    '${mode}' == 'Scheduled'    Log To Console    Scheduled
     #click save
-    Click Element  ${rule_save_button}
-
-Project Create A Rule With Existing Endpoint
-# day 1=Monday..7=Sunday timeformat 12hour+am/pm    
-    [Arguments]  ${name}  ${project_name}  ${endpoint}  ${mode}  ${plan}=Daily  ${weekday}=1  ${time}=0800a
-    #click new
-    Click Element  ${new_name_xpath}
-    #input name
-    Input Text  ${rule_name}  ${name}
-    #input descripiton,here skip, leave it blank
-    #in this keyword, source project is not need to input
-    #set filter
-    Click Element  ${source_image_filter_add}
-    Input Text  ${source_iamge_repo_filter}  *
-    Click Element  ${source_image_filter_add}
-    Input Text  ${source_image_tag_filter}  *
-    #select endpoint
-    Click Element  ${rule_target_select}
-    Wait Until Element Is Visible  //select[@id='ruleTarget']//option[contains(.,'${endpoint}')]
-    Click Element  //select[@id='ruleTarget']//option[contains(.,'${endpoint}')]
-    #set trigger  
-    Click Element  ${rule_trigger_select}
-    Wait Until Element Is Visible  //select[@id='ruleTrigger']//option[contains(.,'${mode}')]
-    Click Element  //select[@id='ruleTrigger']//option[contains(.,'${mode}')]
-    Run Keyword If  '${mode}' == 'Scheduled'  Setting Replicaiton Schedule  ${plan}  ${weekday}  ${time}
-    #click save
-    Click Element  ${rule_save_button}
-
-Setting Replication Schedule
-    [Arguments]  ${plan}  ${weekday}=1  ${time}=0800a
-    Click Element  ${schedule_type_select}
-    Wait Until Element Is Visible  //select[@name='scheduleType']/option[@value='${plan}']
-    Click Element  //select[@name='scheduleType']/option[@value='${plan}']
-    Run Keyword If  '${plan}' == 'Weekly'  Setting Replication Weekday  ${weekday}
-    Input Text  ${shcedule_time}  ${time}
-
-Setting Replication Weekday
-    [arguments]  ${day}
-    Click Element  ${schedule_day_select}
-    Wait Until Element Is Visible  //select[@name='scheduleDay']/option[@value='${day}']
-    Click Element  //select[@name='scheduleDay']/option[@value='${day}']
+    Retry Double Keywords When Error  Retry Element Click  ${rule_save_button}  Retry Wait Until Page Not Contains Element  ${rule_save_button}
+    Sleep  2
 
 Endpoint Is Unpingable
-    Click Element  ${ping_test_button}
+    Retry Element Click  ${ping_test_button}
     Wait Until Page Contains  Failed
 
 Endpoint Is Pingable
-    Click Element  ${ping_test_button}
+    Retry Element Click  ${ping_test_button}
     Wait Until Page Contains  successfully
 
 Disable Certificate Verification
     Checkbox Should Be Selected  ${destination_insecure_checkbox}
-    Click Element  ${destination_insecure_xpath}
+    Retry Element Click  ${destination_insecure_xpath}
     Sleep  1
 
 Enable Certificate Verification
     Checkbox Should Not Be Selected  ${destination_insecure_checkbox}
-    Click Element  ${destination_insecure_xpath}
+    Retry Element Click  ${destination_insecure_xpath}
     Sleep  1
 
 Switch To Registries
-    Click Element  ${nav_to_registries}
+    Retry Element Click  ${nav_to_registries}
     Sleep  1
 
 Switch To Replication Manage
-    Click Element  ${nav_to_replications}
+    Retry Element Click  ${nav_to_replications}
     Sleep  1
 
 Trigger Replication Manual
     [Arguments]  ${rule}
-    Click Element  ${rule_filter_search}
-    Input Text   ${rule_filter_input}  ${rule}
-    Sleep  1
-    Click Element  //clr-dg-row[contains(.,'${rule}')]//label
-    Click Element  ${action_bar_replicate}
-    Wait Until Page Contains Element  ${dialog_replicate}
-    #change from click to mouse down and up 
+    Retry Element Click  ${rule_filter_search}
+    Retry Text Input   ${rule_filter_input}  ${rule}
+    Retry Element Click  //clr-dg-row[contains(.,'${rule}')]//label
+    Retry Element Click  ${action_bar_replicate}
+    Retry Wait Until Page Contains Element  ${dialog_replicate}
+    #change from click to mouse down and up
     Mouse Down  ${dialog_replicate}
     Mouse Up  ${dialog_replicate}
     Sleep  2
-    Wait Until Page Contains Element  //clr-tab-content//div[contains(.,'${rule}')]/../div/clr-icon[@shape='success-standard']
+    Retry Wait Until Page Contains Element  //*[@id='contentAll']//div[contains(.,'${rule}')]/../div/clr-icon[@shape='success-standard']
     Sleep  1
 
 Rename Rule
     [Arguments]  ${rule}  ${newname}
-    Click Element  ${rule_filter_search}
-    Input Text  ${rule_filter_input}  ${rule}
-    Sleep  1
-    Click Element  //clr-dg-row[contains(.,'${rule}')]//label
-    Click Element  ${action_bar_edit}
-    Input Text  ${rule_name}  ${newname}
-    Click Element  ${rule_save_button}
+    Retry Element Click  ${rule_filter_search}
+    Retry Text Input  ${rule_filter_input}  ${rule}
+    Retry Element Click  //clr-dg-row[contains(.,'${rule}')]//label
+    Retry Element Click  ${action_bar_edit}
+    Retry Text Input  ${rule_name}  ${newname}
+    Retry Element Click  ${rule_save_button}
 
 Delete Rule
-    [Arguments]  ${rule} 
-    Click Element  ${rule_filter_search}
-    Input Text   ${rule_filter_input}  ${rule}
-    Sleep  1
-    Click Element  //clr-dg-row[contains(.,'${rule}')]//label
-    Click Element  ${action_bar_delete}
-    Wait Until Page Contains Element  ${dialog_delete}
+    [Arguments]  ${rule}
+    Retry Element Click  ${rule_filter_search}
+    Retry Text Input   ${rule_filter_input}  ${rule}
+    Retry Element Click  //clr-dg-row[contains(.,'${rule}')]//label
+    Retry Element Click  ${action_bar_delete}
+    Retry Wait Until Page Contains Element  ${dialog_delete}
     #change from click to mouse down and up
     Mouse Down  ${dialog_delete}
     Mouse Up  ${dialog_delete}
     Sleep  2
 
 Filter Rule
-    [Arguments]  ${rule} 
-    Click Element  ${rule_filter_search}
-    Input Text   ${rule_filter_input}  ${rule}
+    [Arguments]  ${rule}
+    Retry Element Click  ${rule_filter_search}
+    Retry Text Input   ${rule_filter_input}  ${rule}
     Sleep  1
 
 Select Rule
     [Arguments]  ${rule}
-    Sleep  1
-    Click Element  //clr-dg-row[contains(.,'${rule}')]//label
+    Retry Element Click  //clr-dg-row[contains(.,'${rule}')]//label
 
 Stop Jobs
-    Click Element  ${stop_jobs_button}
+    Retry Element Click  ${stop_jobs_button}
 
 View Job Log
     [arguments]  ${job}
-    Click Element  ${job_filter_search}
-    Input Text  ${job_filter_input}  ${job}
-    Click Link  //clr-dg-row[contains(.,'${job}')]//a
+    Retry Element Click  ${job_filter_search}
+    Retry Text Input  ${job_filter_input}  ${job}
+    Retry Link Click  //clr-dg-row[contains(.,'${job}')]//a
+
+Find Item And Click Edit Button
+    [Arguments]    ${name}
+    Filter Object    ${name}
+    Retry Select Object    ${name}
+    Retry Element Click    ${action_bar_edit}
+
+Find Item And Click Delete Button
+    [Arguments]    ${name}
+    Filter Object    ${name}
+    Retry Select Object    ${name}
+    Retry Element Click    ${action_bar_delete}
+
+Edit Replication Rule By Name
+    [Arguments]    ${name}
+    Switch To Registries
+    Switch To Replication Manage
+    Find Item And Click Edit Button  ${name}
+
+Delete Replication Rule By Name
+    [Arguments]    ${name}
+    Switch To Registries
+    Switch To Replication Manage
+    Find Item And Click Delete Button  ${name}
+
+Ensure Delete Replication Rule By Name
+    [Arguments]    ${name}
+    Delete Replication Rule By Name    ${name}
+    Retry Double Keywords When Error  Retry Element Click  ${delete_confirm_btn}  Retry Wait Until Page Not Contains Element  ${delete_confirm_btn}
+    Retry Wait Element  xpath=//clr-dg-placeholder[contains(.,\"We couldn\'t find any replication rules!\")]
 
 Rename Endpoint
     [arguments]  ${name}  ${newname}
-    Filter Object  ${name}
-    Select Object  ${name}
-    Click Element  ${action_bar_edit}
-    Wait Until Page Contains Element  ${destination_name_xpath}
-    Input Text  ${destination_name_xpath}  ${newname}
-    Click Element  ${replication_save_xpath}
+    Find Item And Click Edit Button  ${name}
+    Retry Wait Until Page Contains Element  ${destination_name_xpath}
+    Retry Text Input  ${destination_name_xpath}  ${newname}
+    Retry Element Click  ${replication_save_xpath}
 
 Delete Endpoint
     [Arguments]  ${name}
-    Click Element  ${endpoint_filter_search}
-    Input Text   ${endpoint_filter_input}  ${name}
-    Sleep  1
+    Retry Element Click  ${endpoint_filter_search}
+    Retry Text Input   ${endpoint_filter_input}  ${name}
     #click checkbox before target endpoint
-    Click Element  //clr-dg-row[contains(.,'${name}')]//label
-    Sleep  1
-    Click Element  ${action_bar_delete}
+    Retry Double Keywords When Error  Retry Element Click  //clr-dg-row[contains(.,'${name}')]//clr-checkbox-wrapper  Retry Wait Element  ${action_bar_delete}
+    Retry Element Click  ${action_bar_delete}
     Wait Until Page Contains Element  ${dialog_delete}
-    Click Element  ${dialog_delete}
+    Retry Element Click  ${dialog_delete}
+
+Select Rule And Replicate
+    [Arguments]  ${rule_name}
+    Retry Element Click    //hbr-list-replication-rule//clr-dg-cell[contains(.,'${rule_name}')]
+    Retry Element Click    ${replication_exec_id}
+    Retry Double Keywords When Error    Retry Element Click    xpath=${dialog_replicate}    Retry Wait Until Page Not Contains Element    xpath=${dialog_replicate}
+
+Delete Replication Rule
+    [Arguments]  ${name}
+    Retry Element Click  ${endpoint_filter_search}
+    Retry Text Input   ${endpoint_filter_input}  ${name}
+    #click checkbox before target endpoint
+    Retry Element Click  //clr-dg-row[contains(.,'${name}')]//label
+    Retry Element Click  ${action_bar_delete}
+    Wait Until Page Contains Element  ${dialog_delete}
+    Retry Element Click  ${dialog_delete}

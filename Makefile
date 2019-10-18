@@ -70,7 +70,6 @@ SRCPATH=./src
 TOOLSPATH=$(BUILDPATH)/tools
 CORE_PATH=$(BUILDPATH)/src/core
 PORTAL_PATH=$(BUILDPATH)/src/portal
-GOBASEPATH=/go/src/github.com/goharbor
 CHECKENVCMD=checkenv.sh
 
 # parameters
@@ -82,6 +81,7 @@ CLAIRFLAG=false
 HTTPPROXY=
 BUILDBIN=false
 MIGRATORFLAG=false
+NPM_REGISTRY=https://registry.npmjs.org
 # enable/disable chart repo supporting
 CHARTFLAG=false
 
@@ -98,23 +98,25 @@ VERSIONFILENAME=UIVERSION
 PREPARE_VERSION_NAME=versions
 
 #versions
-REGISTRYVERSION=v2.7.1
+REGISTRYVERSION=v2.7.1-patch-2819-2553
 NGINXVERSION=$(VERSIONTAG)
 NOTARYVERSION=v0.6.1
-CLAIRVERSION=v2.0.7
+CLAIRVERSION=v2.0.9
 CLAIRDBVERSION=$(VERSIONTAG)
 MIGRATORVERSION=$(VERSIONTAG)
 REDISVERSION=$(VERSIONTAG)
 NOTARYMIGRATEVERSION=v3.5.4
+CLAIRADAPTERVERSION=c7db8b15
 
 # version of chartmuseum
-CHARTMUSEUMVERSION=v0.8.1
+CHARTMUSEUMVERSION=v0.9.0
 
 define VERSIONS_FOR_PREPARE
 VERSION_TAG: $(VERSIONTAG)
 REGISTRY_VERSION: $(REGISTRYVERSION)
 NOTARY_VERSION: $(NOTARYVERSION)
 CLAIR_VERSION: $(CLAIRVERSION)
+CLAIR_ADAPTER_VERSION: $(CLAIRADAPTERVERSION)
 CHARTMUSEUM_VERSION: $(CHARTMUSEUMVERSION)
 endef
 
@@ -136,10 +138,10 @@ GOINSTALL=$(GOCMD) install
 GOTEST=$(GOCMD) test
 GODEP=$(GOTEST) -i
 GOFMT=gofmt -w
-GOBUILDIMAGE=golang:1.11.2
-GOBUILDPATH=$(GOBASEPATH)/harbor
+GOBUILDIMAGE=golang:1.12.5
+GOBUILDPATH=/harbor
 GOIMAGEBUILDCMD=/usr/local/go/bin/go
-GOIMAGEBUILD=$(GOIMAGEBUILDCMD) build
+GOIMAGEBUILD=$(GOIMAGEBUILDCMD) build -mod vendor
 GOBUILDPATH_CORE=$(GOBUILDPATH)/src/core
 GOBUILDPATH_JOBSERVICE=$(GOBUILDPATH)/src/jobservice
 GOBUILDPATH_REGISTRYCTL=$(GOBUILDPATH)/src/registryctl
@@ -235,21 +237,23 @@ PACKAGE_OFFLINE_PARA=-zcvf harbor-offline-installer-$(PKGVERSIONTAG).tgz \
 					$(HARBORPKG)/$(DOCKERIMGFILE).$(VERSIONTAG).tar.gz \
 					$(HARBORPKG)/prepare \
 					$(HARBORPKG)/LICENSE $(HARBORPKG)/install.sh \
+					$(HARBORPKG)/common.sh \
 					$(HARBORPKG)/harbor.yml
 
 PACKAGE_ONLINE_PARA=-zcvf harbor-online-installer-$(PKGVERSIONTAG).tgz \
 					$(HARBORPKG)/prepare \
 					$(HARBORPKG)/LICENSE \
 					$(HARBORPKG)/install.sh \
+					$(HARBORPKG)/common.sh \
 					$(HARBORPKG)/harbor.yml
 
-DOCKERCOMPOSE_LIST=-f $(DOCKERCOMPOSEFILEPATH)/$(DOCKERCOMPOSEFILENAME)
+DOCKERCOMPOSE_FILE_OPT=-f $(DOCKERCOMPOSEFILEPATH)/$(DOCKERCOMPOSEFILENAME)
 
 ifeq ($(NOTARYFLAG), true)
 	DOCKERSAVE_PARA+= goharbor/notary-server-photon:$(NOTARYVERSION)-$(VERSIONTAG) goharbor/notary-signer-photon:$(NOTARYVERSION)-$(VERSIONTAG)
 endif
 ifeq ($(CLAIRFLAG), true)
-	DOCKERSAVE_PARA+= goharbor/clair-photon:$(CLAIRVERSION)-$(VERSIONTAG)
+	DOCKERSAVE_PARA+= goharbor/clair-photon:$(CLAIRVERSION)-$(VERSIONTAG) goharbor/clair-adapter-photon:$(CLAIRADAPTERVERSION)-$(VERSIONTAG)
 endif
 ifeq ($(MIGRATORFLAG), true)
 	DOCKERSAVE_PARA+= goharbor/harbor-migrator:$(MIGRATORVERSION)
@@ -271,7 +275,6 @@ check_environment:
 
 compile_core:
 	@echo "compiling binary for core (golang image)..."
-	@echo $(GOBASEPATH)
 	@echo $(GOBUILDPATH)
 	@$(DOCKERCMD) run --rm -v $(BUILDPATH):$(GOBUILDPATH) -w $(GOBUILDPATH_CORE) $(GOBUILDIMAGE) $(GOIMAGEBUILD) -o $(GOBUILDMAKEPATH_CORE)/$(CORE_BINARYNAME)
 	@echo "Done."
@@ -294,8 +297,8 @@ compile_notary_migrate_patch:
 compile: check_environment versions_prepare compile_core compile_jobservice compile_registryctl compile_notary_migrate_patch
 
 update_prepare_version:
-	@echo "substitude the prepare version tag in prepare file..."
-	$(SEDCMD) -i -e 's/goharbor\/prepare:.*[[:space:]]\+/goharbor\/prepare:$(VERSIONTAG) /' $(MAKEPATH)/prepare ;
+	@echo "substitute the prepare version tag in prepare file..."
+	@$(SEDCMD) -i -e 's/goharbor\/prepare:.*[[:space:]]\+/goharbor\/prepare:$(VERSIONTAG) /' $(MAKEPATH)/prepare ;
 
 prepare: update_prepare_version
 	@echo "preparing..."
@@ -304,13 +307,14 @@ prepare: update_prepare_version
 build:
 	make -f $(MAKEFILEPATH_PHOTON)/Makefile build -e DEVFLAG=$(DEVFLAG) \
 	 -e REGISTRYVERSION=$(REGISTRYVERSION) -e NGINXVERSION=$(NGINXVERSION) -e NOTARYVERSION=$(NOTARYVERSION) -e NOTARYMIGRATEVERSION=$(NOTARYMIGRATEVERSION) \
-	 -e CLAIRVERSION=$(CLAIRVERSION) -e CLAIRDBVERSION=$(CLAIRDBVERSION) -e VERSIONTAG=$(VERSIONTAG) \
+	 -e CLAIRVERSION=$(CLAIRVERSION) -e CLAIRADAPTERVERSION=$(CLAIRADAPTERVERSION) -e CLAIRDBVERSION=$(CLAIRDBVERSION) -e VERSIONTAG=$(VERSIONTAG) \
 	 -e BUILDBIN=$(BUILDBIN) -e REDISVERSION=$(REDISVERSION) -e MIGRATORVERSION=$(MIGRATORVERSION) \
-	 -e CHARTMUSEUMVERSION=$(CHARTMUSEUMVERSION) -e DOCKERIMAGENAME_CHART_SERVER=$(DOCKERIMAGENAME_CHART_SERVER)
+	 -e CHARTMUSEUMVERSION=$(CHARTMUSEUMVERSION) -e DOCKERIMAGENAME_CHART_SERVER=$(DOCKERIMAGENAME_CHART_SERVER) \
+	 -e NPM_REGISTRY=$(NPM_REGISTRY)
 
 install: compile ui_version build prepare start
 
-package_online: prepare
+package_online: update_prepare_version
 	@echo "packing online package ..."
 	@cp -r make $(HARBORPKG)
 	@if [ -n "$(REGISTRYSERVER)" ] ; then \
@@ -414,17 +418,16 @@ pushimage:
 
 start:
 	@echo "loading harbor images..."
-	@$(DOCKERCOMPOSECMD) $(DOCKERCOMPOSE_LIST) up -d
+	@$(DOCKERCOMPOSECMD) $(DOCKERCOMPOSE_FILE_OPT) up -d
 	@echo "Start complete. You can visit harbor now."
 
 down:
-	@echo "Please make sure to set -e NOTARYFLAG=true/CLAIRFLAG=true/CHARTFLAG=true if you are using Notary/CLAIR/Chartmuseum in Harbor, otherwise the Notary/CLAIR/Chartmuseum containers cannot be stop automaticlly."
 	@while [ -z "$$CONTINUE" ]; do \
         read -r -p "Type anything but Y or y to exit. [Y/N]: " CONTINUE; \
     done ; \
     [ $$CONTINUE = "y" ] || [ $$CONTINUE = "Y" ] || (echo "Exiting."; exit 1;)
 	@echo "stoping harbor instance..."
-	@$(DOCKERCOMPOSECMD) $(DOCKERCOMPOSE_LIST) down -v
+	@$(DOCKERCOMPOSECMD) $(DOCKERCOMPOSE_FILE_OPT) down -v
 	@echo "Done."
 
 swagger_client:
@@ -434,7 +437,7 @@ swagger_client:
 	mkdir harborclient
 	java -jar swagger-codegen-cli.jar generate -i docs/swagger.yaml -l python -o harborclient
 	cd harborclient; python ./setup.py install
-	pip install docker -q 
+	pip install docker -q
 	pip freeze
 
 cleanbinary:

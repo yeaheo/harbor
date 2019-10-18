@@ -1,4 +1,3 @@
-harbor
 !/contrib/helm/harbor
 
 make/docker-compose.yml
@@ -16,6 +15,7 @@ src/common/dao/dao.test
 jobservice/test
 
 src/portal/coverage/
+src/portal/lib/coverage/
 src/portal/dist/
 src/portal/html-report/
 src/portal/node_modules/

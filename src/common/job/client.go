@@ -3,13 +3,25 @@ package job
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
+	"regexp"
 	"strings"
 
 	commonhttp "github.com/goharbor/harbor/src/common/http"
 	"github.com/goharbor/harbor/src/common/http/modifier/auth"
 	"github.com/goharbor/harbor/src/common/job/models"
+	"github.com/goharbor/harbor/src/core/config"
+	"github.com/goharbor/harbor/src/jobservice/job"
+)
+
+var (
+	// GlobalClient is an instance of the default client that can be used globally
+	// Notes: the client needs to be initialized before can be used
+	GlobalClient             Client
+	statusBehindErrorPattern = "mismatch job status for stopping job: .*, job status (.*) is behind Running"
+	statusBehindErrorReg     = regexp.MustCompile(statusBehindErrorPattern)
 )
 
 // Client wraps interface to access jobservice.
@@ -17,13 +29,34 @@ type Client interface {
 	SubmitJob(*models.JobData) (string, error)
 	GetJobLog(uuid string) ([]byte, error)
 	PostAction(uuid, action string) error
+	GetExecutions(uuid string) ([]job.Stats, error)
 	// TODO Redirect joblog when we see there's memory issue.
+}
+
+// StatusBehindError represents the error got when trying to stop a success/failed job
+type StatusBehindError struct {
+	status string
+}
+
+// Error returns the detail message about the error
+func (s *StatusBehindError) Error() string {
+	return "status behind error"
+}
+
+// Status returns the current status of the job
+func (s *StatusBehindError) Status() string {
+	return s.status
 }
 
 // DefaultClient is the default implementation of Client interface
 type DefaultClient struct {
 	endpoint string
 	client   *commonhttp.Client
+}
+
+// Init the GlobalClient
+func Init() {
+	GlobalClient = NewDefaultClient(config.InternalJobServiceURL(), config.CoreSecret())
 }
 
 // NewDefaultClient creates a default client based on endpoint and secret.
@@ -103,6 +136,36 @@ func (d *DefaultClient) GetJobLog(uuid string) ([]byte, error) {
 	return data, nil
 }
 
+// GetExecutions ...
+func (d *DefaultClient) GetExecutions(periodicJobID string) ([]job.Stats, error) {
+	url := fmt.Sprintf("%s/api/v1/jobs/%s/executions?page_number=1&page_size=100", d.endpoint, periodicJobID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, &commonhttp.Error{
+			Code:    resp.StatusCode,
+			Message: string(data),
+		}
+	}
+	var exes []job.Stats
+	err = json.Unmarshal(data, &exes)
+	if err != nil {
+		return nil, err
+	}
+	return exes, nil
+}
+
 // PostAction call jobservice's API to operate action for job specified by uuid
 func (d *DefaultClient) PostAction(uuid, action string) error {
 	url := d.endpoint + "/api/v1/jobs/" + uuid
@@ -111,5 +174,25 @@ func (d *DefaultClient) PostAction(uuid, action string) error {
 	}{
 		Action: action,
 	}
-	return d.client.Post(url, req)
+	if err := d.client.Post(url, req); err != nil {
+		status, flag := isStatusBehindError(err)
+		if flag {
+			return &StatusBehindError{
+				status: status,
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func isStatusBehindError(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+	strs := statusBehindErrorReg.FindStringSubmatch(err.Error())
+	if len(strs) != 2 {
+		return "", false
+	}
+	return strs[1], true
 }

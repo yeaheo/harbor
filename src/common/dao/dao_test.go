@@ -26,7 +26,6 @@ import (
 	"github.com/goharbor/harbor/src/common/utils"
 	"github.com/goharbor/harbor/src/common/utils/log"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func execUpdate(o orm.Ormer, sql string, params ...interface{}) error {
@@ -48,8 +47,8 @@ func cleanByUser(username string) {
 	o := GetOrmer()
 	o.Begin()
 
-	err = execUpdate(o, `delete 
-		from project_member 
+	err = execUpdate(o, `delete
+		from project_member
 		where entity_id = (
 			select user_id
 			from harbor_user
@@ -60,7 +59,7 @@ func cleanByUser(username string) {
 		log.Error(err)
 	}
 
-	err = execUpdate(o, `delete  
+	err = execUpdate(o, `delete
 		from project_member
 		where project_id = (
 			select project_id
@@ -72,8 +71,8 @@ func cleanByUser(username string) {
 		log.Error(err)
 	}
 
-	err = execUpdate(o, `delete 
-		from access_log 
+	err = execUpdate(o, `delete
+		from access_log
 		where username = ?
 		`, username)
 	if err != nil {
@@ -81,7 +80,7 @@ func cleanByUser(username string) {
 		log.Error(err)
 	}
 
-	err = execUpdate(o, `delete 
+	err = execUpdate(o, `delete
 		from access_log
 		where project_id = (
 			select project_id
@@ -104,16 +103,11 @@ func cleanByUser(username string) {
 		o.Rollback()
 		log.Error(err)
 	}
-
-	err = execUpdate(o, `delete from replication_job where id < 99`)
-	if err != nil {
-		log.Error(err)
-	}
 	err = execUpdate(o, `delete from replication_policy where id < 99`)
 	if err != nil {
 		log.Error(err)
 	}
-	err = execUpdate(o, `delete from replication_target where id < 99`)
+	err = execUpdate(o, `delete from registry where id < 99`)
 	if err != nil {
 		log.Error(err)
 	}
@@ -165,8 +159,8 @@ func testForAll(m *testing.M) int {
 func clearAll() {
 	tables := []string{"project_member",
 		"project_metadata", "access_log", "repository", "replication_policy",
-		"replication_target", "replication_job", "replication_immediate_trigger", "img_scan_job",
-		"img_scan_overview", "clair_vuln_timestamp", "project", "harbor_user"}
+		"registry", "replication_execution", "replication_task", "img_scan_job",
+		"replication_schedule_job", "img_scan_overview", "clair_vuln_timestamp", "project", "harbor_user"}
 	for _, t := range tables {
 		if err := ClearTable(t); err != nil {
 			log.Errorf("Failed to clear table: %s,error: %v", t, err)
@@ -308,9 +302,6 @@ func TestListUsers(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error occurred in ListUsers: %v", err)
 	}
-	if len(users) != 1 {
-		t.Errorf("Expect one user in list, but the acutal length is %d, the list: %+v", len(users), users)
-	}
 	users2, err := ListUsers(&models.UserQuery{Username: username})
 	if len(users2) != 1 {
 		t.Errorf("Expect one user in list, but the acutal length is %d, the list: %+v", len(users), users)
@@ -333,7 +324,12 @@ func TestResetUserPassword(t *testing.T) {
 		t.Errorf("Error occurred in UpdateUserResetUuid: %v", err)
 	}
 
-	err = ResetUserPassword(models.User{UserID: currentUser.UserID, Password: "HarborTester12345", ResetUUID: uuid, Salt: currentUser.Salt})
+	err = ResetUserPassword(
+		models.User{
+			UserID:          currentUser.UserID,
+			PasswordVersion: utils.SHA256,
+			ResetUUID:       uuid,
+			Salt:            currentUser.Salt}, "HarborTester12345")
 	if err != nil {
 		t.Errorf("Error occurred in ResetUserPassword: %v", err)
 	}
@@ -355,7 +351,12 @@ func TestChangeUserPassword(t *testing.T) {
 		t.Errorf("Error occurred when get user salt")
 	}
 	currentUser.Salt = query.Salt
-	err = ChangeUserPassword(models.User{UserID: currentUser.UserID, Password: "NewHarborTester12345", Salt: currentUser.Salt})
+	err = ChangeUserPassword(
+		models.User{
+			UserID:          currentUser.UserID,
+			Password:        "NewHarborTester12345",
+			PasswordVersion: utils.SHA256,
+			Salt:            currentUser.Salt})
 	if err != nil {
 		t.Errorf("Error occurred in ChangeUserPassword: %v", err)
 	}
@@ -675,439 +676,6 @@ func TestChangeUserProfile(t *testing.T) {
 
 var targetID, policyID, policyID2, policyID3, jobID, jobID2, jobID3 int64
 
-func TestAddRepTarget(t *testing.T) {
-	target := models.RepTarget{
-		Name:     "test",
-		URL:      "127.0.0.1:5000",
-		Username: "admin",
-		Password: "admin",
-	}
-	// _, err := AddRepTarget(target)
-	id, err := AddRepTarget(target)
-	t.Logf("added target, id: %d", id)
-	if err != nil {
-		t.Errorf("Error occurred in AddRepTarget: %v", err)
-	} else {
-		targetID = id
-	}
-	id2 := id + 99
-	tgt, err := GetRepTarget(id2)
-	if err != nil {
-		t.Errorf("Error occurred in GetTarget: %v, id: %d", err, id2)
-	}
-	if tgt != nil {
-		t.Errorf("There should not be a target with id: %d", id2)
-	}
-	tgt, err = GetRepTarget(id)
-	if err != nil {
-		t.Errorf("Error occurred in GetTarget: %v, id: %d", err, id)
-	}
-	if tgt == nil {
-		t.Errorf("Unable to find a target with id: %d", id)
-	}
-	if tgt.URL != "127.0.0.1:5000" {
-		t.Errorf("Unexpected url in target: %s, expected 127.0.0.1:5000", tgt.URL)
-	}
-	if tgt.Username != "admin" {
-		t.Errorf("Unexpected username in target: %s, expected admin", tgt.Username)
-	}
-}
-
-func TestGetRepTargetByName(t *testing.T) {
-	target, err := GetRepTarget(targetID)
-	if err != nil {
-		t.Fatalf("failed to get target %d: %v", targetID, err)
-	}
-
-	target2, err := GetRepTargetByName(target.Name)
-	if err != nil {
-		t.Fatalf("failed to get target %s: %v", target.Name, err)
-	}
-
-	if target.Name != target2.Name {
-		t.Errorf("unexpected target name: %s, expected: %s", target2.Name, target.Name)
-	}
-}
-
-func TestGetRepTargetByEndpoint(t *testing.T) {
-	target, err := GetRepTarget(targetID)
-	if err != nil {
-		t.Fatalf("failed to get target %d: %v", targetID, err)
-	}
-
-	target2, err := GetRepTargetByEndpoint(target.URL)
-	if err != nil {
-		t.Fatalf("failed to get target %s: %v", target.URL, err)
-	}
-
-	if target.URL != target2.URL {
-		t.Errorf("unexpected target URL: %s, expected: %s", target2.URL, target.URL)
-	}
-}
-
-func TestUpdateRepTarget(t *testing.T) {
-	target := &models.RepTarget{
-		Name:     "name",
-		URL:      "http://url",
-		Username: "username",
-		Password: "password",
-	}
-
-	id, err := AddRepTarget(*target)
-	if err != nil {
-		t.Fatalf("failed to add target: %v", err)
-	}
-	defer func() {
-		if err := DeleteRepTarget(id); err != nil {
-			t.Logf("failed to delete target %d: %v", id, err)
-		}
-	}()
-
-	target.ID = id
-	target.Name = "new_name"
-	target.URL = "http://new_url"
-	target.Username = "new_username"
-	target.Password = "new_password"
-
-	if err = UpdateRepTarget(*target); err != nil {
-		t.Fatalf("failed to update target: %v", err)
-	}
-
-	target, err = GetRepTarget(id)
-	if err != nil {
-		t.Fatalf("failed to get target %d: %v", id, err)
-	}
-
-	if target.Name != "new_name" {
-		t.Errorf("unexpected name: %s, expected: %s", target.Name, "new_name")
-	}
-
-	if target.URL != "http://new_url" {
-		t.Errorf("unexpected url: %s, expected: %s", target.URL, "http://new_url")
-	}
-
-	if target.Username != "new_username" {
-		t.Errorf("unexpected username: %s, expected: %s", target.Username, "new_username")
-	}
-
-	if target.Password != "new_password" {
-		t.Errorf("unexpected password: %s, expected: %s", target.Password, "new_password")
-	}
-}
-
-func TestFilterRepTargets(t *testing.T) {
-	targets, err := FilterRepTargets("test")
-	if err != nil {
-		t.Fatalf("failed to get all targets: %v", err)
-	}
-
-	if len(targets) == 0 {
-		t.Errorf("unexpected num of targets: %d, expected: %d", len(targets), 1)
-	}
-}
-
-func TestAddRepPolicy(t *testing.T) {
-	policy := models.RepPolicy{
-		ProjectID:   1,
-		TargetID:    targetID,
-		Description: "whatever",
-		Name:        "mypolicy",
-	}
-	id, err := AddRepPolicy(policy)
-	t.Logf("added policy, id: %d", id)
-	if err != nil {
-		t.Errorf("Error occurred in AddRepPolicy: %v", err)
-	} else {
-		policyID = id
-	}
-	p, err := GetRepPolicy(id)
-	if err != nil {
-		t.Errorf("Error occurred in GetPolicy: %v, id: %d", err, id)
-	}
-	if p == nil {
-		t.Errorf("Unable to find a policy with id: %d", id)
-	}
-
-	if p.Name != "mypolicy" || p.TargetID != targetID || p.Description != "whatever" {
-		t.Errorf("The data does not match, expected: Name: mypolicy, TargetID: %d, Description: whatever;\n result: Name: %s, TargetID: %d, Description: %s",
-			targetID, p.Name, p.TargetID, p.Description)
-	}
-}
-
-func TestGetRepPolicyByTarget(t *testing.T) {
-	policies, err := GetRepPolicyByTarget(targetID)
-	if err != nil {
-		t.Fatalf("failed to get policy according target %d: %v", targetID, err)
-	}
-
-	if len(policies) == 0 {
-		t.Fatal("unexpected length of policies 0, expected is >0")
-	}
-
-	if policies[0].ID != policyID {
-		t.Fatalf("unexpected policy: %d, expected: %d", policies[0].ID, policyID)
-	}
-}
-
-func TestGetRepPolicyByProjectAndTarget(t *testing.T) {
-	policies, err := GetRepPolicyByProjectAndTarget(1, targetID)
-	if err != nil {
-		t.Fatalf("failed to get policy according project %d and target %d: %v", 1, targetID, err)
-	}
-
-	if len(policies) == 0 {
-		t.Fatal("unexpected length of policies 0, expected is >0")
-	}
-
-	if policies[0].ID != policyID {
-		t.Fatalf("unexpected policy: %d, expected: %d", policies[0].ID, policyID)
-	}
-}
-
-func TestGetRepPolicyByName(t *testing.T) {
-	policy, err := GetRepPolicy(policyID)
-	if err != nil {
-		t.Fatalf("failed to get policy %d: %v", policyID, err)
-	}
-
-	policy2, err := GetRepPolicyByName(policy.Name)
-	if err != nil {
-		t.Fatalf("failed to get policy %s: %v", policy.Name, err)
-	}
-
-	if policy.Name != policy2.Name {
-		t.Errorf("unexpected name: %s, expected: %s", policy2.Name, policy.Name)
-	}
-
-}
-
-func TestAddRepJob(t *testing.T) {
-	job := models.RepJob{
-		Repository: "library/ubuntu",
-		PolicyID:   policyID,
-		Operation:  "transfer",
-		TagList:    []string{"12.01", "14.04", "latest"},
-	}
-	id, err := AddRepJob(job)
-	if err != nil {
-		t.Errorf("Error occurred in AddRepJob: %v", err)
-		return
-	}
-	jobID = id
-
-	j, err := GetRepJob(id)
-	if err != nil {
-		t.Errorf("Error occurred in GetRepJob: %v, id: %d", err, id)
-		return
-	}
-	if j == nil {
-		t.Errorf("Unable to find a job with id: %d", id)
-		return
-	}
-	if j.Status != models.JobPending || j.Repository != "library/ubuntu" || j.PolicyID != policyID || j.Operation != "transfer" || len(j.TagList) != 3 {
-		t.Errorf("Expected data of job, id: %d, Status: %s, Repository: library/ubuntu, PolicyID: %d, Operation: transfer, taglist length 3"+
-			"but in returned data:, Status: %s, Repository: %s, Operation: %s, PolicyID: %d, TagList: %v", id, models.JobPending, policyID, j.Status, j.Repository, j.Operation, j.PolicyID, j.TagList)
-		return
-	}
-}
-
-func TestSetRepJobUUID(t *testing.T) {
-	uuid := "u-rep-job-uuid"
-	assert := assert.New(t)
-	err := SetRepJobUUID(jobID, uuid)
-	assert.Nil(err)
-	j, err := GetRepJob(jobID)
-	assert.Nil(err)
-	assert.Equal(uuid, j.UUID)
-}
-
-func TestUpdateRepJobStatus(t *testing.T) {
-	err := UpdateRepJobStatus(jobID, models.JobFinished)
-	if err != nil {
-		t.Errorf("Error occurred in UpdateRepJobStatus, error: %v, id: %d", err, jobID)
-		return
-	}
-	j, err := GetRepJob(jobID)
-	if err != nil {
-		t.Errorf("Error occurred in GetRepJob: %v, id: %d", err, jobID)
-	}
-	if j == nil {
-		t.Errorf("Unable to find a job with id: %d", jobID)
-	}
-	if j.Status != models.JobFinished {
-		t.Errorf("Job's status: %s, expected: %s, id: %d", j.Status, models.JobFinished, jobID)
-	}
-	err = UpdateRepJobStatus(jobID, models.JobPending)
-	if err != nil {
-		t.Errorf("Error occurred in UpdateRepJobStatus when update it back to status pending, error: %v, id: %d", err, jobID)
-		return
-	}
-}
-
-func TestGetRepPolicyByProject(t *testing.T) {
-	p1, err := GetRepPolicyByProject(99)
-	if err != nil {
-		t.Errorf("Error occurred in GetRepPolicyByProject:%v, project ID: %d", err, 99)
-		return
-	}
-	if len(p1) > 0 {
-		t.Errorf("Unexpected length of policy list, expected: 0, in fact: %d, project id: %d", len(p1), 99)
-		return
-	}
-
-	p2, err := GetRepPolicyByProject(1)
-	if err != nil {
-		t.Errorf("Error occuered in GetRepPolicyByProject:%v, project ID: %d", err, 2)
-		return
-	}
-	if len(p2) != 1 {
-		t.Errorf("Unexpected length of policy list, expected: 1, in fact: %d, project id: %d", len(p2), 1)
-		return
-	}
-	if p2[0].ID != policyID {
-		t.Errorf("Unexpecred policy id in result, expected: %d, in fact: %d", policyID, p2[0].ID)
-		return
-	}
-}
-
-func TestGetRepJobs(t *testing.T) {
-	var policyID int64 = 10000
-	repository := "repository_for_test_get_rep_jobs"
-	operation := "operation_for_test"
-	status := "status_for_test"
-	now := time.Now().Add(1 * time.Minute)
-	id, err := AddRepJob(models.RepJob{
-		PolicyID:     policyID,
-		Repository:   repository,
-		Operation:    operation,
-		Status:       status,
-		CreationTime: now,
-		UpdateTime:   now,
-	})
-	require.Nil(t, err)
-	defer DeleteRepJob(id)
-
-	// no query
-	jobs, err := GetRepJobs()
-	require.Nil(t, err)
-	found := false
-	for _, job := range jobs {
-		if job.ID == id {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found)
-
-	// query by policy ID
-	jobs, err = GetRepJobs(&models.RepJobQuery{
-		PolicyID: policyID,
-	})
-	require.Nil(t, err)
-	require.Equal(t, 1, len(jobs))
-	assert.Equal(t, id, jobs[0].ID)
-
-	// query by repository
-	jobs, err = GetRepJobs(&models.RepJobQuery{
-		Repository: repository,
-	})
-	require.Nil(t, err)
-	require.Equal(t, 1, len(jobs))
-	assert.Equal(t, id, jobs[0].ID)
-
-	// query by operation
-	jobs, err = GetRepJobs(&models.RepJobQuery{
-		Operations: []string{operation},
-	})
-	require.Nil(t, err)
-	require.Equal(t, 1, len(jobs))
-	assert.Equal(t, id, jobs[0].ID)
-
-	// query by status
-	jobs, err = GetRepJobs(&models.RepJobQuery{
-		Statuses: []string{status},
-	})
-	require.Nil(t, err)
-	require.Equal(t, 1, len(jobs))
-	assert.Equal(t, id, jobs[0].ID)
-
-	// query by creation time
-	jobs, err = GetRepJobs(&models.RepJobQuery{
-		StartTime: &now,
-	})
-	require.Nil(t, err)
-	require.Equal(t, 1, len(jobs))
-	assert.Equal(t, id, jobs[0].ID)
-}
-
-func TestDeleteRepJob(t *testing.T) {
-	err := DeleteRepJob(jobID)
-	if err != nil {
-		t.Errorf("Error occurred in DeleteRepJob: %v, id: %d", err, jobID)
-		return
-	}
-	t.Logf("deleted rep job, id: %d", jobID)
-	j, err := GetRepJob(jobID)
-	if err != nil {
-		t.Errorf("Error occurred in GetRepJob:%v", err)
-		return
-	}
-	if j != nil {
-		t.Errorf("Able to find rep job after deletion, id: %d", jobID)
-		return
-	}
-}
-
-func TestDeleteRepTarget(t *testing.T) {
-	err := DeleteRepTarget(targetID)
-	if err != nil {
-		t.Errorf("Error occurred in DeleteRepTarget: %v, id: %d", err, targetID)
-		return
-	}
-	t.Logf("deleted target, id: %d", targetID)
-	tgt, err := GetRepTarget(targetID)
-	if err != nil {
-		t.Errorf("Error occurred in GetTarget: %v, id: %d", err, targetID)
-	}
-	if tgt != nil {
-		t.Errorf("Able to find target after deletion, id: %d", targetID)
-	}
-}
-
-func TestGetTotalOfRepPolicies(t *testing.T) {
-	_, err := GetTotalOfRepPolicies("", 1)
-	require.Nil(t, err)
-}
-
-func TestFilterRepPolicies(t *testing.T) {
-	_, err := FilterRepPolicies("name", 0, 0, 0)
-	if err != nil {
-		t.Fatalf("failed to filter policy: %v", err)
-	}
-}
-
-func TestUpdateRepPolicy(t *testing.T) {
-	policy := &models.RepPolicy{
-		ID:   policyID,
-		Name: "new_policy_name",
-	}
-	if err := UpdateRepPolicy(policy); err != nil {
-		t.Fatalf("failed to update policy")
-	}
-}
-
-func TestDeleteRepPolicy(t *testing.T) {
-	err := DeleteRepPolicy(policyID)
-	if err != nil {
-		t.Errorf("Error occurred in DeleteRepPolicy: %v, id: %d", err, policyID)
-		return
-	}
-	t.Logf("delete rep policy, id: %d", policyID)
-	p, err := GetRepPolicy(policyID)
-	require.Nil(t, err)
-	assert.Nil(t, p)
-}
-
 func TestGetOrmer(t *testing.T) {
 	o := GetOrmer()
 	if o == nil {
@@ -1189,181 +757,6 @@ func TestDeleteRepository(t *testing.T) {
 	if repository != nil {
 		t.Errorf("repository is not nil after deletion, repository: %+v", repository)
 	}
-}
-
-var sj1 = models.ScanJob{
-	Status:     models.JobPending,
-	Repository: "library/ubuntu",
-	Tag:        "14.04",
-}
-
-var sj2 = models.ScanJob{
-	Status:     models.JobPending,
-	Repository: "library/ubuntu",
-	Tag:        "15.10",
-	Digest:     "sha256:0204dc6e09fa57ab99ac40e415eb637d62c8b2571ecbbc9ca0eb5e2ad2b5c56f",
-}
-
-func TestAddScanJob(t *testing.T) {
-	assert := assert.New(t)
-	id, err := AddScanJob(sj1)
-	assert.Nil(err)
-	r1, err := GetScanJob(id)
-	assert.Nil(err)
-	assert.Equal(sj1.Tag, r1.Tag)
-	assert.Equal(sj1.Status, r1.Status)
-	assert.Equal(sj1.Repository, r1.Repository)
-	err = ClearTable(models.ScanJobTable)
-	assert.Nil(err)
-}
-
-func TestGetScanJobs(t *testing.T) {
-	assert := assert.New(t)
-	_, err := AddScanJob(sj1)
-	assert.Nil(err)
-	id2, err := AddScanJob(sj1)
-	assert.Nil(err)
-	_, err = AddScanJob(sj2)
-	assert.Nil(err)
-	r, err := GetScanJobsByImage("library/ubuntu", "14.04")
-	assert.Nil(err)
-	assert.Equal(2, len(r))
-	assert.Equal(id2, r[0].ID)
-	r, err = GetScanJobsByImage("library/ubuntu", "14.04", 1)
-	assert.Nil(err)
-	assert.Equal(1, len(r))
-	r, err = GetScanJobsByDigest("sha256:nono")
-	assert.Nil(err)
-	assert.Equal(0, len(r))
-	r, err = GetScanJobsByDigest(sj2.Digest)
-	assert.Equal(1, len(r))
-	assert.Equal(sj2.Tag, r[0].Tag)
-	assert.Nil(err)
-	err = ClearTable(models.ScanJobTable)
-	assert.Nil(err)
-}
-
-func TestSetScanJobUUID(t *testing.T) {
-	uuid := "u-scan-job-uuid"
-	assert := assert.New(t)
-	id, err := AddScanJob(sj1)
-	assert.Nil(err)
-	err = SetScanJobUUID(id, uuid)
-	assert.Nil(err)
-	j, err := GetScanJob(id)
-	assert.Nil(err)
-	assert.Equal(uuid, j.UUID)
-	err = ClearTable(models.ScanJobTable)
-	assert.Nil(err)
-
-}
-
-func TestUpdateScanJobStatus(t *testing.T) {
-	assert := assert.New(t)
-	id, err := AddScanJob(sj1)
-	assert.Nil(err)
-	err = UpdateScanJobStatus(id, "newstatus")
-	assert.Nil(err)
-	j, err := GetScanJob(id)
-	assert.Nil(err)
-	assert.Equal("newstatus", j.Status)
-	err = ClearTable(models.ScanJobTable)
-	assert.Nil(err)
-}
-
-func TestImgScanOverview(t *testing.T) {
-	assert := assert.New(t)
-	err := ClearTable(models.ScanOverviewTable)
-	assert.Nil(err)
-	digest := "sha256:0204dc6e09fa57ab99ac40e415eb637d62c8b2571ecbbc9ca0eb5e2ad2b5c56f"
-	res, err := GetImgScanOverview(digest)
-	assert.Nil(err)
-	assert.Nil(res)
-	err = SetScanJobForImg(digest, 33)
-	assert.Nil(err)
-	res, err = GetImgScanOverview(digest)
-	assert.Nil(err)
-	assert.Equal(int64(33), res.JobID)
-	err = SetScanJobForImg(digest, 22)
-	assert.Nil(err)
-	res, err = GetImgScanOverview(digest)
-	assert.Nil(err)
-	assert.Equal(int64(22), res.JobID)
-	pk := "22-sha256:sdfsdfarfwefwr23r43t34ggregergerger"
-	comp := &models.ComponentsOverview{
-		Total: 2,
-		Summary: []*models.ComponentsOverviewEntry{
-			{
-				Sev:   int(models.SevMedium),
-				Count: 2,
-			},
-		},
-	}
-	err = UpdateImgScanOverview(digest, pk, models.SevMedium, comp)
-	assert.Nil(err)
-	res, err = GetImgScanOverview(digest)
-	assert.Nil(err)
-	assert.Equal(pk, res.DetailsKey)
-	assert.Equal(int(models.SevMedium), res.Sev)
-	assert.Equal(2, res.CompOverview.Summary[0].Count)
-}
-
-func TestVulnTimestamp(t *testing.T) {
-
-	assert := assert.New(t)
-	err := ClearTable(models.ClairVulnTimestampTable)
-	assert.Nil(err)
-	ns := "ubuntu:14"
-	res, err := ListClairVulnTimestamps()
-	assert.Nil(err)
-	assert.Equal(0, len(res))
-	err = SetClairVulnTimestamp(ns, time.Now())
-	assert.Nil(err)
-	res, err = ListClairVulnTimestamps()
-	assert.Nil(err)
-	assert.Equal(1, len(res))
-	assert.Equal(ns, res[0].Namespace)
-	old := time.Now()
-	t.Logf("Sleep 3 seconds")
-	time.Sleep(3 * time.Second)
-	err = SetClairVulnTimestamp(ns, time.Now())
-	assert.Nil(err)
-	res, err = ListClairVulnTimestamps()
-	assert.Nil(err)
-	assert.Equal(1, len(res))
-
-	d := res[0].LastUpdate.Sub(old)
-	if d < 2*time.Second {
-		t.Errorf("Delta should be larger than 2 seconds! old: %v, lastupdate: %v", old, res[0].LastUpdate)
-	}
-}
-
-func TestListScanOverviews(t *testing.T) {
-	assert := assert.New(t)
-	err := ClearTable(models.ScanOverviewTable)
-	assert.Nil(err)
-	l, err := ListImgScanOverviews()
-	assert.Nil(err)
-	assert.Equal(0, len(l))
-	err = ClearTable(models.ScanOverviewTable)
-	assert.Nil(err)
-}
-
-func TestGetScanJobsByStatus(t *testing.T) {
-	assert := assert.New(t)
-	err := ClearTable(models.ScanOverviewTable)
-	assert.Nil(err)
-	id, err := AddScanJob(sj1)
-	assert.Nil(err)
-	err = UpdateScanJobStatus(id, models.JobRunning)
-	assert.Nil(err)
-	r1, err := GetScanJobsByStatus(models.JobPending, models.JobCanceled)
-	assert.Nil(err)
-	assert.Equal(0, len(r1))
-	r2, err := GetScanJobsByStatus(models.JobPending, models.JobRunning)
-	assert.Nil(err)
-	assert.Equal(1, len(r2))
-	assert.Equal(sj1.Repository, r2[0].Repository)
 }
 
 func TestIsSuperUser(t *testing.T) {
@@ -1473,4 +866,54 @@ func TestSaveConfigEntries(t *testing.T) {
 func TestIsDupRecError(t *testing.T) {
 	assert.True(t, isDupRecErr(fmt.Errorf("pq: duplicate key value violates unique constraint \"properties_k_key\"")))
 	assert.False(t, isDupRecErr(fmt.Errorf("other error")))
+}
+
+func TestWithTransaction(t *testing.T) {
+	reference := "transaction"
+
+	quota := models.Quota{
+		Reference:   reference,
+		ReferenceID: "1",
+		Hard:        "{}",
+	}
+
+	failed := func(o orm.Ormer) error {
+		o.Insert(&quota)
+
+		return fmt.Errorf("failed")
+	}
+
+	var quotaID int64
+	success := func(o orm.Ormer) error {
+		id, err := o.Insert(&quota)
+		if err != nil {
+			return err
+		}
+
+		quotaID = id
+		return nil
+	}
+
+	assert := assert.New(t)
+
+	if assert.Error(WithTransaction(failed)) {
+		var quota models.Quota
+		quota.Reference = reference
+		quota.ReferenceID = "1"
+		err := GetOrmer().Read(&quota, "reference", "reference_id")
+		assert.Error(err)
+		assert.False(quota.ID != 0)
+	}
+
+	if assert.Nil(WithTransaction(success)) {
+		var quota models.Quota
+		quota.Reference = reference
+		quota.ReferenceID = "1"
+		err := GetOrmer().Read(&quota, "reference", "reference_id")
+		assert.Nil(err)
+		assert.True(quota.ID != 0)
+		assert.Equal(quotaID, quota.ID)
+
+		GetOrmer().Delete(&models.Quota{ID: quotaID}, "id")
+	}
 }

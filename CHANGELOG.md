@@ -1,5 +1,44 @@
 # Changelog
 
+# v1.8.0 (2019-05-21)
+[Full list of issues fixed in v1.8.0](https://github.com/goharbor/harbor/issues?q=is%3Aissue+is%3Aclosed+label%3Atarget%2F1.8.0)
+* Support for OpenID Connect - OpenID Connect (OIDC) is an authentication layer on top of OAuth 2.0, allowing Harbor to verify the identity of users based on the authentication performed by an external authorization server or identity provider.
+* Robot accounts - Robot accounts can be configured to provide administrators with a token that can be granted appropriate permissions for pulling or pushing images. Harbor users can continue operating Harbor using their enterprise SSO credentials, and use robot accounts for CI/CD systems that perform Docker client commands.
+* Replication advancements - Harbor new version replication allows you to replicate your Harbor repository to and from non-Harbor registries. Harbor 1.8 expands on the Harbor-to-Harbor replication feature, adding the ability to replicate resources between Harbor and Docker Hub, Docker Registry, and Huawei Registry. This is enabled through both push and pull mode replication.
+* Health check API, showing detailed status and health of all Harbor components.
+* Support for defining cron-based scheduled tasks in the Harbor UI. Administrators can now use cron strings to define the schedule of a job. Scan, garbage collection and replication jobs are all supported.
+API explorer integration. End users can now explore and trigger Harbor’s API via the swagger UI nested inside Harbor’s UI.
+* Introduce a new master role to project, the role's permissions are more than developer and less than project admin.
+* Introduce harbor.yml as the replacement of harbor.cfg and refactor the prepare script to provide more flexibility to the installation process based on docker-compose
+* Enhancement of the Job Service engine to include webhook events, additional APIs for automation, and numerous bug fixes to improve the stability of the service.
+* Docker Registry upgraded to v2.7.1.
+
+## v1.7.5 (2019-04-02)
+* Bumped up Clair to v2.0.8
+* Fixed issues in supporting windows images. #6992 #6369
+* Removed user-agent check-in notification handler. #5729
+* Fixed the issue global search not working if chartmusuem is not installed #6753
+
+## v1.7.4 (2019-03-04)
+[Full list of issues fixed in v1.7.4](https://github.com/goharbor/harbor/issues?q=is%3Aissue+is%3Aclosed+label%3Atarget%2F1.7.4)
+
+## v1.7.1 (2019-01-07)
+[Full list of issues fixed in v1.7.1](https://github.com/goharbor/harbor/issues?q=is%3Aissue+is%3Aclosed+label%3Atarget%2F1.7.1)
+
+## v1.7.0 (2018-12-19)
+* Support deploy Harbor with Helm Chart, enables the user to have high availability of Harbor services, refer to the [Installation and Configuration Guide](https://github.com/goharbor/harbor-helm/tree/1.0.0). 
+* Support on-demand Garbage Collection, enables the admin to configure run docker registry garbage collection manually or automatically with a cron schedule.
+* Support Image Retag, enables the user to tag image to different repositories and projects, this is particularly useful in cases when images need to be retagged programmatically in a CI pipeline.
+* Support Image Build History, makes it easy to see the contents of a container image, refer to the [User Guide](https://github.com/goharbor/harbor/blob/release-1.7.0/docs/user_guide.md#build-history).
+* Support Logger customization, enables the user to customize STDOUT / STDERR / FILE / DB logger of running jobs.
+* Improve user experience of Helm Chart Repository:
+   - Chart searching included in the global search results
+   - Show chart versions total number in the chart list
+   - Mark labels to helm charts
+   - The latest version can be downloaded as default one on the chart list view
+   - The chart can be deleted by deleting all the versions under it
+
+
 ## v1.6.0 (2018-09-11)
 
 - Support manages Helm Charts: From version 1.6.0, Harbor is upgraded to be a composite cloud-native registry, which supports both image management and helm charts management.

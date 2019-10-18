@@ -15,13 +15,14 @@
 package driver
 
 import (
+	"os"
+
 	"github.com/goharbor/harbor/src/common/config/encrypt"
 	"github.com/goharbor/harbor/src/common/config/metadata"
 	"github.com/goharbor/harbor/src/common/dao"
 	"github.com/goharbor/harbor/src/common/models"
 	"github.com/goharbor/harbor/src/common/utils"
 	"github.com/goharbor/harbor/src/common/utils/log"
-	"os"
 )
 
 // Database - Used to load/save configuration in database
@@ -39,7 +40,7 @@ func (d *Database) Load() (map[string]interface{}, error) {
 
 		itemMetadata, ok := metadata.Instance().GetByName(item.Key)
 		if !ok {
-			log.Warningf("failed to get metadata, key:%v, error:%v, skip to load item", item.Key, err)
+			log.Debugf("failed to get metadata, key:%v, error:%v, skip to load item", item.Key, err)
 			continue
 		}
 		if itemMetadata.Scope == metadata.SystemScope {
@@ -63,7 +64,7 @@ func (d *Database) Save(cfgs map[string]interface{}) error {
 	for key, value := range cfgs {
 		if item, ok := metadata.Instance().GetByName(key); ok {
 			if os.Getenv("UTTEST") != "true" && item.Scope == metadata.SystemScope {
-				log.Errorf("system setting can not updated, key %v", key)
+				// skip to save system setting to db
 				continue
 			}
 			strValue := utils.GetStrValueOfAnyType(value)

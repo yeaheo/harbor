@@ -14,7 +14,7 @@ const (
 	idParam      = ":id"
 )
 
-// ChartLabelAPI handles the requests of marking/removing lables to/from charts.
+// ChartLabelAPI handles the requests of marking/removing labels to/from charts.
 type ChartLabelAPI struct {
 	LabelResourceAPI
 	project       *models.Project
@@ -58,14 +58,7 @@ func (cla *ChartLabelAPI) Prepare() {
 }
 
 func (cla *ChartLabelAPI) requireAccess(action rbac.Action) bool {
-	resource := rbac.NewProjectNamespace(cla.project.ProjectID).Resource(rbac.ResourceHelmChartVersionLabel)
-
-	if !cla.SecurityCtx.Can(action, resource) {
-		cla.HandleForbidden(cla.SecurityCtx.GetUsername())
-		return false
-	}
-
-	return true
+	return cla.RequireProjectAccess(cla.project.ProjectID, action, rbac.ResourceHelmChartVersionLabel)
 }
 
 // MarkLabel handles the request of marking label to chart.
@@ -75,7 +68,10 @@ func (cla *ChartLabelAPI) MarkLabel() {
 	}
 
 	l := &models.Label{}
-	cla.DecodeJSONReq(l)
+	if err := cla.DecodeJSONReq(l); err != nil {
+		cla.SendBadRequestError(err)
+		return
+	}
 
 	label, ok := cla.validate(l.ID, cla.project.ProjectID)
 	if !ok {

@@ -15,6 +15,7 @@
 package robot
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -25,6 +26,7 @@ import (
 	"github.com/goharbor/harbor/src/common/utils/log"
 	"github.com/goharbor/harbor/src/core/promgr"
 	"github.com/goharbor/harbor/src/core/promgr/pmsdriver/local"
+	"github.com/goharbor/harbor/src/pkg/robot/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,7 +97,7 @@ func TestIsAuthenticated(t *testing.T) {
 	assert.False(t, ctx.IsAuthenticated())
 
 	// authenticated
-	ctx = NewSecurityContext(&models.Robot{
+	ctx = NewSecurityContext(&model.Robot{
 		Name:     "test",
 		Disabled: false,
 	}, nil, nil)
@@ -108,7 +110,7 @@ func TestGetUsername(t *testing.T) {
 	assert.Equal(t, "", ctx.GetUsername())
 
 	// authenticated
-	ctx = NewSecurityContext(&models.Robot{
+	ctx = NewSecurityContext(&model.Robot{
 		Name:     "test",
 		Disabled: false,
 	}, nil, nil)
@@ -121,7 +123,7 @@ func TestIsSysAdmin(t *testing.T) {
 	assert.False(t, ctx.IsSysAdmin())
 
 	// authenticated, non admin
-	ctx = NewSecurityContext(&models.Robot{
+	ctx = NewSecurityContext(&model.Robot{
 		Name:     "test",
 		Disabled: false,
 	}, nil, nil)
@@ -133,57 +135,59 @@ func TestIsSolutionUser(t *testing.T) {
 	assert.False(t, ctx.IsSolutionUser())
 }
 
-func TestHasReadPerm(t *testing.T) {
-
-	rbacPolicy := &rbac.Policy{
-		Resource: "/project/testrobot/repository",
-		Action:   "pull",
+func TestHasPullPerm(t *testing.T) {
+	policies := []*rbac.Policy{
+		{
+			Resource: rbac.Resource(fmt.Sprintf("/project/%d/repository", private.ProjectID)),
+			Action:   rbac.ActionPull,
+		},
 	}
-	policies := []*rbac.Policy{}
-	policies = append(policies, rbacPolicy)
-	robot := &models.Robot{
+	robot := &model.Robot{
 		Name:        "test_robot_1",
 		Description: "desc",
 	}
 
 	ctx := NewSecurityContext(robot, pm, policies)
-	resource := rbac.NewProjectNamespace(private.Name).Resource(rbac.ResourceRepository)
+	resource := rbac.NewProjectNamespace(private.ProjectID).Resource(rbac.ResourceRepository)
 	assert.True(t, ctx.Can(rbac.ActionPull, resource))
 }
 
-func TestHasWritePerm(t *testing.T) {
-
-	rbacPolicy := &rbac.Policy{
-		Resource: "/project/testrobot/repository",
-		Action:   "push",
+func TestHasPushPerm(t *testing.T) {
+	policies := []*rbac.Policy{
+		{
+			Resource: rbac.Resource(fmt.Sprintf("/project/%d/repository", private.ProjectID)),
+			Action:   rbac.ActionPush,
+		},
 	}
-	policies := []*rbac.Policy{}
-	policies = append(policies, rbacPolicy)
-	robot := &models.Robot{
+	robot := &model.Robot{
 		Name:        "test_robot_2",
 		Description: "desc",
 	}
 
 	ctx := NewSecurityContext(robot, pm, policies)
-	resource := rbac.NewProjectNamespace(private.Name).Resource(rbac.ResourceRepository)
+	resource := rbac.NewProjectNamespace(private.ProjectID).Resource(rbac.ResourceRepository)
 	assert.True(t, ctx.Can(rbac.ActionPush, resource))
 }
 
-func TestHasAllPerm(t *testing.T) {
-	rbacPolicy := &rbac.Policy{
-		Resource: "/project/testrobot/repository",
-		Action:   "push+pull",
+func TestHasPushPullPerm(t *testing.T) {
+	policies := []*rbac.Policy{
+		{
+			Resource: rbac.Resource(fmt.Sprintf("/project/%d/repository", private.ProjectID)),
+			Action:   rbac.ActionPush,
+		},
+		{
+			Resource: rbac.Resource(fmt.Sprintf("/project/%d/repository", private.ProjectID)),
+			Action:   rbac.ActionPull,
+		},
 	}
-	policies := []*rbac.Policy{}
-	policies = append(policies, rbacPolicy)
-	robot := &models.Robot{
+	robot := &model.Robot{
 		Name:        "test_robot_3",
 		Description: "desc",
 	}
 
 	ctx := NewSecurityContext(robot, pm, policies)
-	resource := rbac.NewProjectNamespace(private.Name).Resource(rbac.ResourceRepository)
-	assert.True(t, ctx.Can(rbac.ActionPushPull, resource))
+	resource := rbac.NewProjectNamespace(private.ProjectID).Resource(rbac.ResourceRepository)
+	assert.True(t, ctx.Can(rbac.ActionPush, resource) && ctx.Can(rbac.ActionPull, resource))
 }
 
 func TestGetMyProjects(t *testing.T) {

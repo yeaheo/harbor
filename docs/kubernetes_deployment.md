@@ -1,12 +1,12 @@
 **IMPORTANT** This guide is deprecated and not updated any more. We strongly recommend using [Harbor Helm Chart](https://github.com/goharbor/harbor-helm) to deploy latest Harbor release on Kubernetes.
 
 ## Integration with Kubernetes
-This Document decribes how to deploy Harbor on Kubernetes. It has been verified on **Kubernetes v1.6.5** and **Harbor v1.2.0**
+This Document describes how to deploy Harbor on Kubernetes. It has been verified on **Kubernetes v1.6.5** and **Harbor v1.2.0**
 
 ### Prerequisite
 
 * You should have domain knowledge about Kubernetes (Deployment, Service, Persistent Volume, Persistent Volume Claim, Config Map, Ingress).
-* **Optional**: Load the docker images onto woker nodes.  *If you skip this step, worker node will pull images from Docker Hub when starting the pods.*
+* **Optional**: Load the docker images onto worker nodes.  *If you skip this step, worker node will pull images from Docker Hub when starting the pods.*
 	* Download the offline installer of Harbor v1.2.0 from the [release](https://github.com/goharbor/harbor/releases) page.
 	* Uncompress the offline installer and get the images tgz file harbor.*.tgz, transfer it to each of the worker nodes.
 	* Load the images into docker:  
@@ -94,7 +94,7 @@ You can find all configs of Harbor in `make/kubernetes/templates/`. There are sp
 
 - `jobservice.cm.yaml`: ENV and web config of jobservice
 - `mysql.cm.yaml`: Root password of MySQL
-- `ingress.yaml`: Https certification and ingress config. If you are fimiliar with ingress, you can modify it.
+- `ingress.yaml`: Https certification and ingress config. If you are familiar with ingress, you can modify it.
 - `registry.cm.yaml`: Token service certification and registry config
   Registry use filesystem to store data of images. You can find it like:
 
@@ -108,7 +108,7 @@ You can find all configs of Harbor in `make/kubernetes/templates/`. There are sp
 - `ui.cm.yaml`: Token service private key, ENV and web config of ui.
 - `adminserver.cm.yaml`: Initial values of configuration attributes of Harbor.
 
-`ui`, `jobservice` and `adminserver` are powered by beego. If you are fimiliar with beego, you can modify configs in `ui.cm.yaml`, `jobservice.cm.yaml` and `adminserver.cm.yaml`.
+`ui`, `jobservice` and `adminserver` are powered by beego. If you are familiar with beego, you can modify configs in `ui.cm.yaml`, `jobservice.cm.yaml` and `adminserver.cm.yaml`.
 
 
 ### Running

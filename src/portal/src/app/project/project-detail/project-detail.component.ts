@@ -17,10 +17,9 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { Project } from '../project';
 
 import { SessionService } from '../../shared/session.service';
-import { ProjectService } from '../../project/project.service';
 
 import { AppConfigService } from "../../app-config.service";
-import { UserPermissionService, USERSTATICPERMISSION, ErrorHandler } from "@harbor/ui";
+import { UserPermissionService, USERSTATICPERMISSION, ErrorHandler, ProjectService } from "@harbor/ui";
 import { forkJoin } from "rxjs";
 @Component({
   selector: 'project-detail',
@@ -35,15 +34,17 @@ export class ProjectDetailComponent implements OnInit {
   isMember: boolean;
   roleName: string;
   projectId: number;
+  hasProjectReadPermission: boolean;
   hasHelmChartsListPermission: boolean;
   hasRepositoryListPermission: boolean;
   hasMemberListPermission: boolean;
-  hasReplicationListPermission: boolean;
   hasLabelListPermission: boolean;
   hasLabelCreatePermission: boolean;
   hasLogListPermission: boolean;
   hasConfigurationListPermission: boolean;
   hasRobotListPermission: boolean;
+  hasTagRetentionPermission: boolean;
+  hasWebhookListPermission: boolean;
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -67,13 +68,13 @@ export class ProjectDetailComponent implements OnInit {
   getPermissionsList(projectId: number): void {
     let permissionsList = [];
     permissionsList.push(this.userPermissionService.getPermission(projectId,
+      USERSTATICPERMISSION.PROJECT.KEY, USERSTATICPERMISSION.PROJECT.VALUE.READ));
+    permissionsList.push(this.userPermissionService.getPermission(projectId,
       USERSTATICPERMISSION.LOG.KEY, USERSTATICPERMISSION.LOG.VALUE.LIST));
     permissionsList.push(this.userPermissionService.getPermission(projectId,
       USERSTATICPERMISSION.CONFIGURATION.KEY, USERSTATICPERMISSION.CONFIGURATION.VALUE.READ));
     permissionsList.push(this.userPermissionService.getPermission(projectId,
       USERSTATICPERMISSION.MEMBER.KEY, USERSTATICPERMISSION.MEMBER.VALUE.LIST));
-    permissionsList.push(this.userPermissionService.getPermission(projectId,
-      USERSTATICPERMISSION.REPLICATION.KEY, USERSTATICPERMISSION.REPLICATION.VALUE.LIST));
     permissionsList.push(this.userPermissionService.getPermission(projectId,
       USERSTATICPERMISSION.LABEL.KEY, USERSTATICPERMISSION.LABEL.VALUE.LIST));
     permissionsList.push(this.userPermissionService.getPermission(projectId,
@@ -84,17 +85,15 @@ export class ProjectDetailComponent implements OnInit {
       USERSTATICPERMISSION.ROBOT.KEY, USERSTATICPERMISSION.ROBOT.VALUE.LIST));
     permissionsList.push(this.userPermissionService.getPermission(projectId,
       USERSTATICPERMISSION.LABEL.KEY, USERSTATICPERMISSION.LABEL.VALUE.CREATE));
-    forkJoin(...permissionsList).subscribe(Rules => {
-      this.hasLogListPermission = Rules[0] as boolean;
-      this.hasConfigurationListPermission = Rules[1] as boolean;
-      this.hasMemberListPermission = Rules[2] as boolean;
-      this.hasReplicationListPermission = Rules[3] as boolean;
-      this.hasLabelListPermission = Rules[4] as boolean;
-      this.hasRepositoryListPermission = Rules[5] as boolean;
-      this.hasHelmChartsListPermission = Rules[6] as boolean;
-      this.hasRobotListPermission = Rules[7] as boolean;
-      this.hasLabelCreatePermission = Rules[8] as boolean;
+    permissionsList.push(this.userPermissionService.getPermission(projectId,
+        USERSTATICPERMISSION.TAG_RETENTION.KEY, USERSTATICPERMISSION.TAG_RETENTION.VALUE.READ));
+    permissionsList.push(this.userPermissionService.getPermission(projectId,
+      USERSTATICPERMISSION.WEBHOOK.KEY, USERSTATICPERMISSION.WEBHOOK.VALUE.LIST));
 
+    forkJoin(...permissionsList).subscribe(Rules => {
+      [this.hasProjectReadPermission, this.hasLogListPermission, this.hasConfigurationListPermission, this.hasMemberListPermission
+        , this.hasLabelListPermission, this.hasRepositoryListPermission, this.hasHelmChartsListPermission, this.hasRobotListPermission
+        , this.hasLabelCreatePermission, this.hasTagRetentionPermission, this.hasWebhookListPermission] = Rules;
     }, error => this.errorHandler.error(error));
   }
 

@@ -19,8 +19,8 @@ import {
   CanActivateChild
 } from '@angular/router';
 import { SessionService } from '../../shared/session.service';
-import { ProjectService } from '../../project/project.service';
-import { CommonRoutes } from '../../shared/shared.const';
+import { ProjectService } from '@harbor/ui';
+import { CommonRoutes } from '@harbor/ui';
 import { Observable } from 'rxjs';
 
 @Injectable()
@@ -39,8 +39,7 @@ export class MemberGuard implements CanActivate, CanActivateChild {
         this.sessionService.retrieveUser()
         .subscribe(() => {
           this.checkMemberStatus(state.url, projectId).subscribe((res) => observer.next(res));
-        }
-        , error => {
+        }, error => {
           this.router.navigate([CommonRoutes.HARBOR_DEFAULT]);
           observer.next(false);
         });

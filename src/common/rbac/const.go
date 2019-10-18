@@ -18,9 +18,8 @@ package rbac
 const (
 	ActionAll = Action("*") // action match any other actions
 
-	ActionPull     = Action("pull")      // pull repository tag
-	ActionPush     = Action("push")      // push repository tag
-	ActionPushPull = Action("push+pull") // compatible with security all perm of project
+	ActionPull = Action("pull") // pull repository tag
+	ActionPush = Action("push") // push repository tag
 
 	// create, read, update, delete, list actions compatible with restful api methods
 	ActionCreate = Action("create")
@@ -28,6 +27,8 @@ const (
 	ActionUpdate = Action("update")
 	ActionDelete = Action("delete")
 	ActionList   = Action("list")
+
+	ActionOperate = Action("operate")
 )
 
 // const resource variables
@@ -42,15 +43,21 @@ const (
 	ResourceLog                        = Resource("log")
 	ResourceMember                     = Resource("member")
 	ResourceMetadata                   = Resource("metadata")
-	ResourceReplication                = Resource("replication")
-	ResourceReplicationJob             = Resource("replication-job")
+	ResourceReplication                = Resource("replication")     // TODO remove
+	ResourceReplicationJob             = Resource("replication-job") // TODO remove
+	ResourceReplicationExecution       = Resource("replication-execution")
+	ResourceReplicationTask            = Resource("replication-task")
 	ResourceRepository                 = Resource("repository")
+	ResourceTagRetention               = Resource("tag-retention")
+	ResourceImmutableTag               = Resource("immutable-tag")
 	ResourceRepositoryLabel            = Resource("repository-label")
 	ResourceRepositoryTag              = Resource("repository-tag")
 	ResourceRepositoryTagLabel         = Resource("repository-tag-label")
 	ResourceRepositoryTagManifest      = Resource("repository-tag-manifest")
-	ResourceRepositoryTagScanJob       = Resource("repository-tag-scan-job")
-	ResourceRepositoryTagVulnerability = Resource("repository-tag-vulnerability")
+	ResourceRepositoryTagScanJob       = Resource("repository-tag-scan-job")      // TODO: remove
+	ResourceRepositoryTagVulnerability = Resource("repository-tag-vulnerability") // TODO: remove
 	ResourceRobot                      = Resource("robot")
+	ResourceNotificationPolicy         = Resource("notification-policy")
+	ResourceScan                       = Resource("scan")
 	ResourceSelf                       = Resource("") // subresource for self
 )

@@ -12,43 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import {
-  Component,
-  OnInit,
-  ViewChild,
-  Input,
-  Output,
-  EventEmitter,
+  AfterViewInit,
   ChangeDetectorRef,
-  ElementRef, AfterViewInit
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnInit,
+  Output,
+  ViewChild
 } from "@angular/core";
-import { Subject, forkJoin } from "rxjs";
-import { debounceTime, distinctUntilChanged, finalize } from 'rxjs/operators';
+import { forkJoin, Observable, Subject, throwError as observableThrowError } from "rxjs";
+import { catchError, debounceTime, distinctUntilChanged, finalize, map } from 'rxjs/operators';
 import { TranslateService } from "@ngx-translate/core";
-import { State, Comparator } from "../service/interface";
+import { Comparator, Label, State, Tag, TagClickEvent } from "../service/interface";
 
-import { TagService, RetagService, VulnerabilitySeverity, RequestQueryParams } from "../service/index";
+import { RequestQueryParams, RetagService, TagService, VulnerabilitySeverity } from "../service/index";
 import { ErrorHandler } from "../error-handler/error-handler";
 import { ChannelService } from "../channel/index";
-import {
-  ConfirmationTargets,
-  ConfirmationState,
-  ConfirmationButtons, Roles
-} from "../shared/shared.const";
+import { ConfirmationButtons, ConfirmationState, ConfirmationTargets } from "../shared/shared.const";
 
 import { ConfirmationDialogComponent } from "../confirmation-dialog/confirmation-dialog.component";
 import { ConfirmationMessage } from "../confirmation-dialog/confirmation-message";
 import { ConfirmationAcknowledgement } from "../confirmation-dialog/confirmation-state-message";
 
-import { Label, Tag, TagClickEvent, RetagRequest } from "../service/interface";
-
 import {
-  CustomComparator,
   calculatePage,
+  clone,
+  CustomComparator,
+  DEFAULT_PAGE_SIZE, DEFAULT_SUPPORTED_MIME_TYPE,
   doFiltering,
   doSorting,
   VULNERABILITY_SCAN_STATUS,
-  DEFAULT_PAGE_SIZE,
-  clone,
 } from "../utils";
 
 import { CopyInputComponent } from "../push-image/copy-input.component";
@@ -58,14 +53,16 @@ import { USERSTATICPERMISSION } from "../service/permission-static";
 import { operateChanges, OperateInfo, OperationState } from "../operation/operate";
 import { OperationService } from "../operation/operation.service";
 import { ImageNameInputComponent } from "../image-name-input/image-name-input.component";
-import { map, catchError } from "rxjs/operators";
-import { Observable, throwError as observableThrowError } from "rxjs";
+import { errorHandler as errorHandFn } from "../shared/shared.utils";
+import { HttpClient } from "@angular/common/http";
+import { ClrLoadingState } from "@clr/angular";
+
 export interface LabelState {
   iconsShow: boolean;
   label: Label;
   show: boolean;
 }
-
+export const AVAILABLE_TIME = '0001-01-01T00:00:00Z';
 @Component({
   selector: 'hbr-tag',
   templateUrl: './tag.component.html',
@@ -106,6 +103,8 @@ export class TagComponent implements OnInit, AfterViewInit {
   showlabel: boolean;
 
   createdComparator: Comparator<Tag> = new CustomComparator<Tag>("created", "date");
+  pullComparator: Comparator<Tag> = new CustomComparator<Tag>("pull_time", "date");
+  pushComparator: Comparator<Tag> = new CustomComparator<Tag>("push_time", "date");
 
   loading = false;
   copyFailed = false;
@@ -131,14 +130,14 @@ export class TagComponent implements OnInit, AfterViewInit {
   };
   filterOneLabel: Label = this.initFilter;
 
-  @ViewChild("confirmationDialog")
+  @ViewChild("confirmationDialog", {static: false})
   confirmationDialog: ConfirmationDialogComponent;
 
-  @ViewChild("imageNameInput")
+  @ViewChild("imageNameInput", {static: false})
   imageNameInput: ImageNameInputComponent;
 
-  @ViewChild("digestTarget") textInput: ElementRef;
-  @ViewChild("copyInput") copyInput: CopyInputComponent;
+  @ViewChild("digestTarget", {static: false}) textInput: ElementRef;
+  @ViewChild("copyInput", {static: false}) copyInput: CopyInputComponent;
 
   pageSize: number = DEFAULT_PAGE_SIZE;
   currentPage = 1;
@@ -149,6 +148,8 @@ export class TagComponent implements OnInit, AfterViewInit {
   hasRetagImagePermission: boolean;
   hasDeleteImagePermission: boolean;
   hasScanImagePermission: boolean;
+  hasEnabledScanner: boolean;
+  scanBtnState: ClrLoadingState = ClrLoadingState.DEFAULT;
   constructor(
     private errorHandler: ErrorHandler,
     private tagService: TagService,
@@ -158,7 +159,8 @@ export class TagComponent implements OnInit, AfterViewInit {
     private translateService: TranslateService,
     private ref: ChangeDetectorRef,
     private operationService: OperationService,
-    private channel: ChannelService
+    private channel: ChannelService,
+    private http: HttpClient
   ) { }
 
   ngOnInit() {
@@ -166,6 +168,7 @@ export class TagComponent implements OnInit, AfterViewInit {
       this.errorHandler.error("Project ID cannot be unset.");
       return;
     }
+    this.getProjectScanner();
     if (!this.repoName) {
       this.errorHandler.error("Repo name cannot be unset.");
       return;
@@ -213,7 +216,7 @@ export class TagComponent implements OnInit, AfterViewInit {
         }
       });
 
-      this.getImagePermissionRule(this.projectId);
+    this.getImagePermissionRule(this.projectId);
   }
 
   ngAfterViewInit() {
@@ -258,8 +261,7 @@ export class TagComponent implements OnInit, AfterViewInit {
 
     // Pagination
     let params: RequestQueryParams = new RequestQueryParams();
-    params.set("page", "" + pageNumber);
-    params.set("page_size", "" + this.pageSize);
+    params = params.set("page", "" + pageNumber).set("page_size", "" + this.pageSize);
 
     this.loading = true;
 
@@ -271,7 +273,10 @@ export class TagComponent implements OnInit, AfterViewInit {
         // Do filtering and sorting
         this.tags = doFiltering<Tag>(tags, state);
         this.tags = doSorting<Tag>(this.tags, state);
-
+        this.tags = this.tags.map(tag => {
+          tag.pull_time = tag.pull_time === AVAILABLE_TIME ? '' : tag.pull_time;
+          return tag;
+        });
         this.loading = false;
       }, error => {
         this.loading = false;
@@ -524,22 +529,14 @@ export class TagComponent implements OnInit, AfterViewInit {
       .subscribe(items => {
         // To keep easy use for vulnerability bar
         items.forEach((t: Tag) => {
-          if (!t.scan_overview) {
-            t.scan_overview = {
-              scan_status: VULNERABILITY_SCAN_STATUS.stopped,
-              severity: VulnerabilitySeverity.UNKNOWN,
-              update_time: new Date(),
-              components: {
-                total: 0,
-                summary: []
-              }
-            };
-          }
           if (t.signature !== null) {
             signatures.push(t.name);
           }
         });
-        this.tags = items;
+        this.tags = items.map(tag => {
+          tag.pull_time = tag.pull_time === AVAILABLE_TIME ? '' : tag.pull_time;
+          return tag;
+        });
         let signedName: { [key: string]: string[] } = {};
         signedName[this.repoName] = signatures;
         this.signatureOutput.emit(signedName);
@@ -668,15 +665,11 @@ export class TagComponent implements OnInit, AfterViewInit {
                 operateChanges(operMessage, OperationState.success);
               });
           }), catchError(error => {
-            if (error.status === 503) {
-              return forkJoin(this.translateService.get('BATCH.DELETED_FAILURE'),
-                this.translateService.get('REPOSITORY.TAGS_NO_DELETE')).pipe(map(res => {
-                  operateChanges(operMessage, OperationState.failure, res[1]);
-                }));
-            }
-            return this.translateService.get("BATCH.DELETED_FAILURE").pipe(map(res => {
-              operateChanges(operMessage, OperationState.failure, res);
-            }));
+            const message = errorHandFn(error);
+            this.translateService.get(message).subscribe(res =>
+              operateChanges(operMessage, OperationState.failure, res)
+            );
+            return observableThrowError(message);
           }));
     }
   }
@@ -718,28 +711,21 @@ export class TagComponent implements OnInit, AfterViewInit {
 
   // Get vulnerability scanning status
   scanStatus(t: Tag): string {
-    if (t && t.scan_overview && t.scan_overview.scan_status) {
-      return t.scan_overview.scan_status;
+    if (t) {
+      let so = this.handleScanOverview(t.scan_overview);
+      if (so && so.scan_status) {
+        return so.scan_status;
+      }
     }
-
-    return VULNERABILITY_SCAN_STATUS.unknown;
+    return VULNERABILITY_SCAN_STATUS.NOT_SCANNED;
   }
-
-  existObservablePackage(t: Tag): boolean {
-    return t.scan_overview &&
-      t.scan_overview.components &&
-      t.scan_overview.components.total &&
-      t.scan_overview.components.total > 0 ? true : false;
-  }
-
   // Whether show the 'scan now' menu
   canScanNow(t: Tag[]): boolean {
-    if (!this.withClair) { return false; }
     if (!this.hasScanImagePermission) { return false; }
     let st: string = this.scanStatus(t[0]);
 
-    return st !== VULNERABILITY_SCAN_STATUS.pending &&
-      st !== VULNERABILITY_SCAN_STATUS.running;
+    return st !== VULNERABILITY_SCAN_STATUS.PENDING &&
+      st !== VULNERABILITY_SCAN_STATUS.RUNNING;
   }
   getImagePermissionRule(projectId: number): void {
     let hasAddLabelImagePermission = this.userPermissionService.getPermission(projectId, USERSTATICPERMISSION.REPOSITORY_TAG_LABEL.KEY,
@@ -751,12 +737,12 @@ export class TagComponent implements OnInit, AfterViewInit {
     let hasScanImagePermission = this.userPermissionService.getPermission(projectId,
       USERSTATICPERMISSION.REPOSITORY_TAG_SCAN_JOB.KEY, USERSTATICPERMISSION.REPOSITORY_TAG_SCAN_JOB.VALUE.CREATE);
     forkJoin(hasAddLabelImagePermission, hasRetagImagePermission, hasDeleteImagePermission, hasScanImagePermission)
-    .subscribe(permissions => {
-      this.hasAddLabelImagePermission = permissions[0] as boolean;
-      this.hasRetagImagePermission = permissions[1] as boolean;
-      this.hasDeleteImagePermission = permissions[2] as boolean;
-      this.hasScanImagePermission = permissions[3] as boolean;
-    }, error =>  this.errorHandler.error(error) );
+      .subscribe(permissions => {
+        this.hasAddLabelImagePermission = permissions[0] as boolean;
+        this.hasRetagImagePermission = permissions[1] as boolean;
+        this.hasDeleteImagePermission = permissions[2] as boolean;
+        this.hasScanImagePermission = permissions[3] as boolean;
+      }, error => this.errorHandler.error(error));
   }
   // Trigger scan
   scanNow(t: Tag[]): void {
@@ -771,5 +757,27 @@ export class TagComponent implements OnInit, AfterViewInit {
   // pull command
   onCpError($event: any): void {
     this.copyInput.setPullCommendShow();
+  }
+  getProjectScanner(): void {
+    this.hasEnabledScanner = false;
+    this.scanBtnState = ClrLoadingState.LOADING;
+    this.http.get(`/api/projects/${this.projectId}/scanner`)
+        .pipe(map(response => response as any))
+        .pipe(catchError(error => observableThrowError(error)))
+        .subscribe(response => {
+          if (response && "{}" !== JSON.stringify(response) && !response.disable
+          && response.health) {
+            this.hasEnabledScanner = true;
+          }
+          this.scanBtnState = ClrLoadingState.SUCCESS;
+        }, error => {
+          this.scanBtnState = ClrLoadingState.ERROR;
+        });
+  }
+  handleScanOverview(scanOverview: any) {
+    if (scanOverview) {
+      return scanOverview[DEFAULT_SUPPORTED_MIME_TYPE];
+    }
+    return null;
   }
 }

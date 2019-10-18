@@ -1,8 +1,8 @@
 
 import {throwError as observableThrowError,  Observable } from "rxjs";
-import { Injectable, Inject } from "@angular/core";
-import { Http } from "@angular/http";
-import { map ,  catchError } from "rxjs/operators";
+import {Injectable, Inject} from "@angular/core";
+import { HttpClient, HttpParams, HttpResponse } from "@angular/common/http";
+import { catchError } from "rxjs/operators";
 
 import { SERVICE_CONFIG, IServiceConfig } from "../service.config";
 import { Project } from "../project-policy-config/project";
@@ -10,12 +10,11 @@ import { ProjectPolicy } from "../project-policy-config/project-policy-config.co
 import {
   HTTP_JSON_OPTIONS,
   HTTP_GET_OPTIONS,
-  buildHttpRequestOptions
+  buildHttpRequestOptionsWithObserveResponse
 } from "../utils";
-import { RequestQueryParams } from "./RequestQueryParams";
 
 /**
- * Define the service methods to handle the Prject related things.
+ * Define the service methods to handle the Project related things.
  *
  **
  * @abstract
@@ -23,7 +22,7 @@ import { RequestQueryParams } from "./RequestQueryParams";
  */
 export abstract class ProjectService {
   /**
-   * Get Infomations of a specific Project.
+   * Get Informations about a specific Project.
    *
    * @abstract
    *  ** deprecated param {string|number} [projectId]
@@ -47,7 +46,9 @@ export abstract class ProjectService {
    */
   abstract updateProjectPolicy(
     projectId: number | string,
-    projectPolicy: ProjectPolicy
+    projectPolicy: ProjectPolicy,
+    reuseSysCVEVWhitelist: string,
+    projectWhitelist: object
   ): Observable<any>;
 
   /**
@@ -64,10 +65,16 @@ export abstract class ProjectService {
    */
   abstract listProjects(
     name: string,
-    isPublic: number,
+    isPublic?: number,
     page?: number,
     pageSize?: number
-  ): Observable<Project[]>;
+  ): Observable<HttpResponse<Project[]>>;
+  abstract createProject(name: string, metadata: any, countLimit: number, storageLimit: number): Observable<any>;
+  abstract toggleProjectPublic(projectId: number, isPublic: string): Observable<any>;
+  abstract deleteProject(projectId: number): Observable<any>;
+  abstract checkProjectExists(projectName: string): Observable<any>;
+  abstract checkProjectMember(projectId: number): Observable<any>;
+  abstract getProjectSummary(projectId: number): Observable<any>;
 }
 
 /**
@@ -80,7 +87,7 @@ export abstract class ProjectService {
 @Injectable()
 export class ProjectDefaultService extends ProjectService {
   constructor(
-    private http: Http,
+    private http: HttpClient,
     @Inject(SERVICE_CONFIG) private config: IServiceConfig
   ) {
     super();
@@ -96,61 +103,91 @@ export class ProjectDefaultService extends ProjectService {
       ? this.config.projectBaseEndpoint
       : "/api/projects";
     return this.http
-      .get(`${baseUrl}/${projectId}`, HTTP_GET_OPTIONS)
-      .pipe(map(response => response.json()))
-      .pipe(catchError(error => observableThrowError(error)));
-  }
-
-  public listProjects(
-    name: string,
-    isPublic: number,
-    page?: number,
-    pageSize?: number
-  ): Observable<Project[]> {
-    let baseUrl: string = this.config.projectBaseEndpoint
-      ? this.config.projectBaseEndpoint
-      : "/api/projects";
-    let params = new RequestQueryParams();
-    if (page && pageSize) {
-      params.set("page", page + "");
-      params.set("page_size", pageSize + "");
-    }
-    if (name && name.trim() !== "") {
-      params.set("name", name);
-    }
-    if (isPublic !== undefined) {
-      params.set("public", "" + isPublic);
-    }
-
-    // let options = new RequestOptions({ headers: this.getHeaders, search: params });
-    return this.http
-      .get(baseUrl, buildHttpRequestOptions(params))
-      .pipe(map(response => response.json()))
+      .get<Project>(`${baseUrl}/${projectId}`, HTTP_GET_OPTIONS)
       .pipe(catchError(error => observableThrowError(error)));
   }
 
   public updateProjectPolicy(
     projectId: number | string,
-    projectPolicy: ProjectPolicy
+    projectPolicy: ProjectPolicy,
+    reuseSysCVEVWhitelist: string,
+    projectWhitelist: object
   ): any {
     let baseUrl: string = this.config.projectBaseEndpoint
       ? this.config.projectBaseEndpoint
       : "/api/projects";
     return this.http
-      .put(
+      .put<any>(
         `${baseUrl}/${projectId}`,
         {
           metadata: {
-            public: projectPolicy.Public ? "true" : "false",
-            enable_content_trust: projectPolicy.ContentTrust ? "true" : "false",
-            prevent_vul: projectPolicy.PreventVulImg ? "true" : "false",
-            severity: projectPolicy.PreventVulImgSeverity,
-            auto_scan: projectPolicy.ScanImgOnPush ? "true" : "false"
-          }
+              public: projectPolicy.Public ? "true" : "false",
+              enable_content_trust: projectPolicy.ContentTrust ? "true" : "false",
+              prevent_vul: projectPolicy.PreventVulImg ? "true" : "false",
+              severity: projectPolicy.PreventVulImgSeverity,
+              auto_scan: projectPolicy.ScanImgOnPush ? "true" : "false",
+              reuse_sys_cve_whitelist: reuseSysCVEVWhitelist
+          },
+            cve_whitelist: projectWhitelist
         },
         HTTP_JSON_OPTIONS
       )
-      .pipe(map(response => response.status))
       .pipe(catchError(error => observableThrowError(error)));
+  }
+  public listProjects(name: string, isPublic?: number, page?: number, pageSize?: number): Observable<HttpResponse<Project[]>> {
+    let params = new HttpParams();
+    if (page && pageSize) {
+      params = params.set('page', page + '').set('page_size', pageSize + '');
+    }
+    if (name && name.trim() !== "") {
+      params = params.set('name', name);
+    }
+    if (isPublic !== undefined) {
+      params = params.set('public', '' + isPublic);
+    }
+    return this.http
+               .get<HttpResponse<Project[]>>(`/api/projects`, buildHttpRequestOptionsWithObserveResponse(params)).pipe(
+               catchError(error => observableThrowError(error)), );
+  }
+
+  public createProject(name: string, metadata: any, countLimit: number, storageLimit: number): Observable<any> {
+    return this.http
+               .post(`/api/projects`,
+                JSON.stringify({'project_name': name, 'metadata': {
+                  public: metadata.public ? 'true' : 'false',
+                },
+                count_limit: countLimit, storage_limit: storageLimit
+              })
+                , HTTP_JSON_OPTIONS).pipe(
+               catchError(error => observableThrowError(error)), );
+  }
+
+  public toggleProjectPublic(projectId: number, isPublic: string): Observable<any> {
+    return this.http
+               .put(`/api/projects/${projectId}`, { 'metadata': {'public': isPublic} }, HTTP_JSON_OPTIONS).pipe(
+               catchError(error => observableThrowError(error)), );
+  }
+
+  public deleteProject(projectId: number): Observable<any> {
+    return this.http
+               .delete(`/api/projects/${projectId}`)
+               .pipe(catchError(error => observableThrowError(error)));
+  }
+
+  public checkProjectExists(projectName: string): Observable<any> {
+    return this.http
+               .head(`/api/projects/?project_name=${projectName}`).pipe(
+               catchError(error => observableThrowError(error)), );
+  }
+
+  public checkProjectMember(projectId: number): Observable<any> {
+    return this.http
+               .get(`/api/projects/${projectId}/members`, HTTP_GET_OPTIONS).pipe(
+               catchError(error => observableThrowError(error)), );
+  }
+  public getProjectSummary(projectId: number): Observable<any> {
+    return this.http
+               .get(`/api/projects/${projectId}/summary`, HTTP_GET_OPTIONS).pipe(
+               catchError(error => observableThrowError(error)), );
   }
 }

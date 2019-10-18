@@ -16,12 +16,15 @@ package controllers
 
 import (
 	"bytes"
+	"context"
+	"github.com/goharbor/harbor/src/core/api"
 	"html/template"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/astaxie/beego"
 	"github.com/beego/i18n"
@@ -33,11 +36,12 @@ import (
 	"github.com/goharbor/harbor/src/common/utils/log"
 	"github.com/goharbor/harbor/src/core/auth"
 	"github.com/goharbor/harbor/src/core/config"
+	"github.com/goharbor/harbor/src/core/filter"
 )
 
 // CommonController handles request from UI that doesn't expect a page, such as /SwitchLanguage /logout ...
 type CommonController struct {
-	beego.Controller
+	api.BaseController
 	i18n.Locale
 }
 
@@ -46,16 +50,56 @@ func (cc *CommonController) Render() error {
 	return nil
 }
 
+// Prepare overwrites the Prepare func in api.BaseController to ignore unnecessary steps
+func (cc *CommonController) Prepare() {}
+
 type messageDetail struct {
 	Hint string
 	URL  string
 	UUID string
 }
 
+func redirectForOIDC(ctx context.Context, username string) bool {
+	am, _ := ctx.Value(filter.AuthModeKey).(string)
+	if am != common.OIDCAuth {
+		return false
+	}
+	u, err := dao.GetUser(models.User{Username: username})
+	if err != nil {
+		log.Warningf("Failed to get user by name: %s, error: %v", username, err)
+	}
+	if u == nil {
+		return true
+	}
+	ou, err := dao.GetOIDCUserByUserID(u.UserID)
+	if err != nil {
+		log.Warningf("Failed to get OIDC user info for user, id: %d, error: %v", u.UserID, err)
+	}
+	if ou != nil {
+		return true
+	}
+	return false
+}
+
 // Login handles login request from UI.
 func (cc *CommonController) Login() {
 	principal := cc.GetString("principal")
 	password := cc.GetString("password")
+	if redirectForOIDC(cc.Ctx.Request.Context(), principal) {
+		ep, err := config.ExtEndpoint()
+		if err != nil {
+			log.Errorf("Failed to get the external endpoint, error: %v", err)
+			cc.CustomAbort(http.StatusUnauthorized, "")
+		}
+		url := strings.TrimSuffix(ep, "/") + common.OIDCLoginPath
+		log.Debugf("Redirect user %s to login page of OIDC provider", principal)
+		// Return a json to UI with status code 403, as it cannot handle status 302
+		cc.Ctx.Output.Status = http.StatusForbidden
+		cc.Ctx.Output.JSON(struct {
+			Location string `json:"redirect_location"`
+		}{url}, false, false)
+		return
+	}
 
 	user, err := auth.Login(models.AuthModel{
 		Principal: principal,
@@ -69,7 +113,7 @@ func (cc *CommonController) Login() {
 	if user == nil {
 		cc.CustomAbort(http.StatusUnauthorized, "")
 	}
-	cc.SetSession("user", *user)
+	cc.PopulateUserSession(*user)
 }
 
 // LogOut Habor UI
@@ -210,11 +254,10 @@ func (cc *CommonController) ResetPassword() {
 		cc.CustomAbort(http.StatusForbidden, http.StatusText(http.StatusForbidden))
 	}
 
-	password := cc.GetString("password")
+	rawPassword := cc.GetString("password")
 
-	if password != "" {
-		user.Password = password
-		err = dao.ResetUserPassword(*user)
+	if rawPassword != "" {
+		err = dao.ResetUserPassword(*user, rawPassword)
 		if err != nil {
 			log.Errorf("Error occurred in ResetUserPassword: %v", err)
 			cc.CustomAbort(http.StatusInternalServerError, "Internal error.")

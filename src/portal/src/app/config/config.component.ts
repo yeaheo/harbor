@@ -14,9 +14,8 @@
 import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { Subscription } from "rxjs";
 import {
-    Configuration, StringValueItem, SystemSettingsComponent, VulnerabilityConfigComponent,
-    isEmpty, clone, getChanges, GcComponent, GcRepoService } from '@harbor/ui';
-
+    Configuration, StringValueItem, SystemSettingsComponent,
+    isEmpty, clone } from '@harbor/ui';
 import { ConfirmationTargets, ConfirmationState } from '../shared/shared.const';
 import { SessionService } from '../shared/session.service';
 import { ConfirmationDialogService } from '../shared/confirmation-dialog/confirmation-dialog.service';
@@ -34,8 +33,6 @@ const TabLinkContentMap = {
     'config-replication': 'replication',
     'config-email': 'email',
     'config-system': 'system_settings',
-    'config-vulnerability': 'vulnerability',
-    'config-gc': 'gc',
     'config-label': 'system_label',
 };
 
@@ -51,11 +48,9 @@ export class ConfigurationComponent implements OnInit, OnDestroy {
     originalCopy: Configuration = new Configuration();
     confirmSub: Subscription;
 
-    @ViewChild(SystemSettingsComponent) systemSettingsConfig: SystemSettingsComponent;
-    @ViewChild(VulnerabilityConfigComponent) vulnerabilityConfig: VulnerabilityConfigComponent;
-    @ViewChild(GcComponent) gcConfig: GcComponent;
-    @ViewChild(ConfigurationEmailComponent) mailConfig: ConfigurationEmailComponent;
-    @ViewChild(ConfigurationAuthComponent) authConfig: ConfigurationAuthComponent;
+    @ViewChild(SystemSettingsComponent, {static: false}) systemSettingsConfig: SystemSettingsComponent;
+    @ViewChild(ConfigurationEmailComponent, {static: false}) mailConfig: ConfigurationEmailComponent;
+    @ViewChild(ConfigurationAuthComponent, {static: false}) authConfig: ConfigurationAuthComponent;
 
     constructor(
         private msgHandler: MessageHandlerService,
@@ -73,10 +68,6 @@ export class ConfigurationComponent implements OnInit, OnDestroy {
         return this.appConfigService.getConfig().has_ca_root;
     }
 
-    public get withClair(): boolean {
-        return this.appConfigService.getConfig().with_clair;
-    }
-
     public get withAdmiral(): boolean {
         return this.appConfigService.getConfig().with_admiral;
     }
@@ -88,7 +79,9 @@ export class ConfigurationComponent implements OnInit, OnDestroy {
     isCurrentTabContent(contentId: string): boolean {
         return TabLinkContentMap[this.currentTabId] === contentId;
     }
-
+    refreshAllconfig() {
+        this.retrieveConfig();
+    }
     ngOnInit(): void {
         // First load
         // Double confirm the current use has admin role
@@ -112,6 +105,7 @@ export class ConfigurationComponent implements OnInit, OnDestroy {
 
     ngOnDestroy(): void {
         if (this.confirmSub) {
+            console.log(this.confirmSub);
             this.confirmSub.unsubscribe();
         }
     }
@@ -147,6 +141,7 @@ export class ConfigurationComponent implements OnInit, OnDestroy {
                 configurations.email_password = new StringValueItem(fakePass, true);
                 configurations.ldap_search_password = new StringValueItem(fakePass, true);
                 configurations.uaa_client_secret = new StringValueItem(fakePass, true);
+                configurations.oidc_client_secret = new StringValueItem(fakePass, true);
                 this.allConfig = configurations;
                 // Keep the original copy of the data
                 this.originalCopy = clone(configurations);

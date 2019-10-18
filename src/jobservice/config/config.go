@@ -23,21 +23,23 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goharbor/harbor/src/jobservice/utils"
+	"github.com/goharbor/harbor/src/common/utils/log"
+	"github.com/goharbor/harbor/src/jobservice/common/utils"
 	yaml "gopkg.in/yaml.v2"
 )
 
 const (
-	jobServiceProtocol           = "JOB_SERVICE_PROTOCOL"
-	jobServicePort               = "JOB_SERVICE_PORT"
-	jobServiceHTTPCert           = "JOB_SERVICE_HTTPS_CERT"
-	jobServiceHTTPKey            = "JOB_SERVICE_HTTPS_KEY"
-	jobServiceWorkerPoolBackend  = "JOB_SERVICE_POOL_BACKEND"
-	jobServiceWorkers            = "JOB_SERVICE_POOL_WORKERS"
-	jobServiceRedisURL           = "JOB_SERVICE_POOL_REDIS_URL"
-	jobServiceRedisNamespace     = "JOB_SERVICE_POOL_REDIS_NAMESPACE"
-	jobServiceCoreServerEndpoint = "CORE_URL"
-	jobServiceAuthSecret         = "JOBSERVICE_SECRET"
+	jobServiceProtocol                   = "JOB_SERVICE_PROTOCOL"
+	jobServicePort                       = "JOB_SERVICE_PORT"
+	jobServiceHTTPCert                   = "JOB_SERVICE_HTTPS_CERT"
+	jobServiceHTTPKey                    = "JOB_SERVICE_HTTPS_KEY"
+	jobServiceWorkerPoolBackend          = "JOB_SERVICE_POOL_BACKEND"
+	jobServiceWorkers                    = "JOB_SERVICE_POOL_WORKERS"
+	jobServiceRedisURL                   = "JOB_SERVICE_POOL_REDIS_URL"
+	jobServiceRedisNamespace             = "JOB_SERVICE_POOL_REDIS_NAMESPACE"
+	jobServiceRedisIdleConnTimeoutSecond = "JOB_SERVICE_POOL_REDIS_CONN_IDLE_TIMEOUT_SECOND"
+	jobServiceAuthSecret                 = "JOBSERVICE_SECRET"
+	coreURL                              = "CORE_URL"
 
 	// JobServiceProtocolHTTPS points to the 'https' protocol
 	JobServiceProtocolHTTPS = "https"
@@ -68,7 +70,7 @@ type Configuration struct {
 	// Additional config when using https
 	HTTPSConfig *HTTPSConfig `yaml:"https_config,omitempty"`
 
-	// Configurations of worker pool
+	// Configurations of worker worker
 	PoolConfig *PoolConfig `yaml:"worker_pool,omitempty"`
 
 	// Job logger configurations
@@ -84,13 +86,17 @@ type HTTPSConfig struct {
 	Key  string `yaml:"key"`
 }
 
-// RedisPoolConfig keeps redis pool info.
+// RedisPoolConfig keeps redis worker info.
 type RedisPoolConfig struct {
 	RedisURL  string `yaml:"redis_url"`
 	Namespace string `yaml:"namespace"`
+	// IdleTimeoutSecond closes connections after remaining idle for this duration. If the value
+	// is zero, then idle connections are not closed. Applications should set
+	// the timeout to a value less than the server's timeout.
+	IdleTimeoutSecond int64 `yaml:"idle_timeout_second"`
 }
 
-// PoolConfig keeps worker pool configurations.
+// PoolConfig keeps worker worker configurations.
 type PoolConfig struct {
 	// Worker concurrency
 	WorkerCount  uint             `yaml:"workers"`
@@ -162,6 +168,11 @@ func (c *Configuration) Load(yamlFilePath string, detectEnv bool) error {
 // GetAuthSecret get the auth secret from the env
 func GetAuthSecret() string {
 	return utils.ReadEnv(jobServiceAuthSecret)
+}
+
+// GetCoreURL get the core url from the env
+func GetCoreURL() string {
+	return utils.ReadEnv(coreURL)
 }
 
 // GetUIAuthSecret get the auth secret of UI side
@@ -242,6 +253,19 @@ func (c *Configuration) loadEnvs() {
 			}
 			c.PoolConfig.RedisPoolCfg.Namespace = rn
 		}
+
+		it := utils.ReadEnv(jobServiceRedisIdleConnTimeoutSecond)
+		if !utils.IsEmptyStr(it) {
+			if c.PoolConfig.RedisPoolCfg == nil {
+				c.PoolConfig.RedisPoolCfg = &RedisPoolConfig{}
+			}
+			v, err := strconv.Atoi(it)
+			if err != nil {
+				log.Warningf("Invalid idle timeout second: %s, will use 0 instead", it)
+			} else {
+				c.PoolConfig.RedisPoolCfg.IdleTimeoutSecond = int64(v)
+			}
+		}
 	}
 
 }
@@ -274,32 +298,32 @@ func (c *Configuration) validate() error {
 	}
 
 	if c.PoolConfig == nil {
-		return errors.New("no worker pool is configured")
+		return errors.New("no worker worker is configured")
 	}
 
 	if c.PoolConfig.Backend != JobServicePoolBackendRedis {
-		return fmt.Errorf("worker pool backend %s does not support", c.PoolConfig.Backend)
+		return fmt.Errorf("worker worker backend %s does not support", c.PoolConfig.Backend)
 	}
 
 	// When backend is redis
 	if c.PoolConfig.Backend == JobServicePoolBackendRedis {
 		if c.PoolConfig.RedisPoolCfg == nil {
-			return fmt.Errorf("redis pool must be configured when backend is set to '%s'", c.PoolConfig.Backend)
+			return fmt.Errorf("redis worker must be configured when backend is set to '%s'", c.PoolConfig.Backend)
 		}
 		if utils.IsEmptyStr(c.PoolConfig.RedisPoolCfg.RedisURL) {
-			return errors.New("URL of redis pool is empty")
+			return errors.New("URL of redis worker is empty")
 		}
 
 		if !strings.HasPrefix(c.PoolConfig.RedisPoolCfg.RedisURL, redisSchema) {
-			return errors.New("Invalid redis URL")
+			return errors.New("invalid redis URL")
 		}
 
 		if _, err := url.Parse(c.PoolConfig.RedisPoolCfg.RedisURL); err != nil {
-			return fmt.Errorf("Invalid redis URL: %s", err.Error())
+			return fmt.Errorf("invalid redis URL: %s", err.Error())
 		}
 
 		if utils.IsEmptyStr(c.PoolConfig.RedisPoolCfg.Namespace) {
-			return errors.New("namespace of redis pool is required")
+			return errors.New("namespace of redis worker is required")
 		}
 	}
 

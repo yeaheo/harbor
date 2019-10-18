@@ -230,7 +230,52 @@ func GetStrValueOfAnyType(value interface{}) string {
 		}
 		strVal = string(b)
 	} else {
-		strVal = fmt.Sprintf("%v", value)
+		switch val := value.(type) {
+		case float64:
+			strVal = strconv.FormatFloat(val, 'f', -1, 64)
+		case float32:
+			strVal = strconv.FormatFloat(float64(val), 'f', -1, 32)
+		default:
+			strVal = fmt.Sprintf("%v", value)
+		}
 	}
 	return strVal
+}
+
+// IsIllegalLength ...
+func IsIllegalLength(s string, min int, max int) bool {
+	if min == -1 {
+		return (len(s) > max)
+	}
+	if max == -1 {
+		return (len(s) <= min)
+	}
+	return (len(s) < min || len(s) > max)
+}
+
+// IsContainIllegalChar ...
+func IsContainIllegalChar(s string, illegalChar []string) bool {
+	for _, c := range illegalChar {
+		if strings.Index(s, c) >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDigest A sha256 is a string with 64 characters.
+func IsDigest(ref string) bool {
+	return strings.HasPrefix(ref, "sha256:") && len(ref) == 71
+}
+
+// ParseJSONInt ...
+func ParseJSONInt(value interface{}) (int, bool) {
+	switch value.(type) {
+	case float64:
+		return int(value.(float64)), true
+	case int:
+		return value.(int), true
+	default:
+		return 0, false
+	}
 }
